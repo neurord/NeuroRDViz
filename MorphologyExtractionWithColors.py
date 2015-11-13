@@ -66,6 +66,7 @@ def single_type_ug(simData):
 ##save_xml(ug2, 'file.vtu')
 
 # Now view the data.
+@mlab.show
 def view(dataset):
     """ Open up a mayavi scene and display the dataset in it.
     """
@@ -88,12 +89,8 @@ def getMoleculeConcForEachVoxel(simData):
     wholeCellSnapshot = np.concatenate((dendSnapshot,somaSnapshot),axis=0)
     return wholeCellSnapshot
 
-@mlab.show
-def main(ug):
-    view(ug)
-
 
 if __name__ == '__main__':
     simData = h5.File(sys.argv[1],"r")
     ug = single_type_ug(simData)
-    main(ug)
+    view(ug)

@@ -1,3 +1,5 @@
+#this file has example of working menu for user specified molecule
+#problem is that it uses TK, and we don't want to do that
 import numpy as np
 import h5py as h5
 import time

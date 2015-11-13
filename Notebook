@@ -1,0 +1,7 @@
+Need to balkanize and add functions that...    
+    
+    #Function takes data file and returns array concentrations 
+    #Function takes array of functions and creates ug
+    #Function takes morphology the h5
+    #Function that displays unstructured grid 
+    #Function that returns molecule selection
