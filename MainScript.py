@@ -103,7 +103,7 @@ def renderOfWindow():
     renderWindowInteractor.Start()
 
 
-def SelectMolecule(simData):
+def select_molecule(simData):
    master = Tk()
 
    var = StringVar(master)
@@ -123,7 +123,7 @@ def SelectMolecule(simData):
    button.pack()
 
 
-def SearchMolecule():
+def search_molecule():
    
    #Needs to be local 
    def Run():
@@ -160,8 +160,8 @@ menu = Menu(root)
 root.config(menu=menu)
 moleculeMenu = Menu(menu)
 menu.add_cascade(label="Molecule", menu=moleculeMenu)
-moleculeMenu.add_command(label="Select", command=SelectMolecule)
-moleculeMenu.add_command(label="Search...", command=SearchMolecule)
+moleculeMenu.add_command(label="Select", command=select_molecule)
+moleculeMenu.add_command(label="Search...", command=search_molecule)
 moleculeMenu.add_separator()
 #moleculeMenu.add_command(label="Exit", command=root.quit)
 

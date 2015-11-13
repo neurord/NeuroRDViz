@@ -49,13 +49,13 @@ def single_type_ug(simData):
     ug = tvtk.UnstructuredGrid(points=points)
     ug.set_cells(voxel_type, voxels)
     
-    colors = np.arange(grid.shape[0])
-    colors = grid.z1
-    temperature = np.repeat(colors, 8)
+    concentrations = np.arange(grid.shape[0])
+    concentrations = getMoleculeConcForEachVoxel(simData)   # Have this pass less through it ********************
+    #temperature = np.repeat(colors, 8)
 
-    velocity = random.randn(points.shape[0], points.shape[1])
-    ug.point_data.scalars = temperature
-    ug.point_data.scalars.name = 'temperature'
+    #velocity = random.randn(points.shape[0], points.shape[1]) # Can show direction of predominant molecule movement at some point
+    ug.point_data.scalars = np.repeat(concentrations, 8)
+    ug.point_data.scalars.name = 'concentrations'
     # Some vectors.
     #ug1.point_data.vectors = velocity
     #ug1.point_data.vectors.name = 'velocity'
@@ -74,6 +74,19 @@ def view(dataset):
     surf = mlab.pipeline.surface(dataset, opacity=0.1)
     mlab.pipeline.surface(mlab.pipeline.extract_edges(surf),
                             color=(0, 0, 0), )
+
+def getMoleculeConcForEachVoxel(simData):
+    #Function takes data file and returns array concentrations 
+    #Function takes array of functions and creates ug
+    #Function takes morphology the h5
+    #Function that displays unstructured grid 
+
+    molNum = 0 #Change this to be fed in, for now 0 = glu
+    '''Must make the following generic for instances with A. Varying sizes. B.No Soma  etc..''' #################################<=======
+    dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][0,:,2] #takes [0'th molecule, all voxel's of it's data, 0'th milisecond)
+    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][0,:,0] 
+    wholeCellSnapshot = np.concatenate((dendSnapshot,somaSnapshot),axis=0)
+    return wholeCellSnapshot
 
 @mlab.show
 def main(ug):
