@@ -14,7 +14,7 @@ from mayavi.sources.vtk_data_source import VTKDataSource
 pandasyn=1
 
 #include simData arguments to main once scripts are codependent
-def single_type_ug(simData):
+def unstructuredGridMorpho(simData, molnum):
     """A slightly more complex example of how to generate an
     unstructured grid with different cell types.  Returns a created
     unstructured grid.
@@ -50,7 +50,7 @@ def single_type_ug(simData):
     ug.set_cells(voxel_type, voxels)
     
     concentrations = np.arange(grid.shape[0])
-    concentrations = getMoleculeConcForEachVoxel(simData)   # Have this pass less through it ********************
+    concentrations = getMoleculeConcForEachVoxel(simData, 0, molnum)   # Have this pass less through it ********************
     #temperature = np.repeat(colors, 8)
 
     #velocity = random.randn(points.shape[0], points.shape[1]) # Can show direction of predominant molecule movement at some point
@@ -76,21 +76,31 @@ def view(dataset):
     mlab.pipeline.surface(mlab.pipeline.extract_edges(surf),
                             color=(0, 0, 0), )
 
-def getMoleculeConcForEachVoxel(simData):
+def getMoleculeConcForEachVoxel(simData, ms, molnum):
     #Function takes data file and returns array concentrations 
     #Function takes array of functions and creates ug
     #Function takes morphology the h5
     #Function that displays unstructured grid 
 
-    molNum = 0 #Change this to be fed in, for now 0 = glu
     '''Must make the following generic for instances with A. Varying sizes. B.No Soma  etc..''' #################################<=======
-    dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][0,:,2] #takes [0'th molecule, all voxel's of it's data, 0'th milisecond)
-    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][0,:,0] 
+    dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][molnum,:,ms] #takes [0'th molecule, all voxel's of it's data, 0'th milisecond)
+    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][molnum,:,ms] 
     wholeCellSnapshot = np.concatenate((dendSnapshot,somaSnapshot),axis=0)
     return wholeCellSnapshot
 
 
 if __name__ == '__main__':
     simData = h5.File(sys.argv[1],"r")
-    ug = single_type_ug(simData)
+    molname=sys.argv[2]
+    molnum=5 #place holder for function that converts molname to num
+    ug = unstructuredGridMorpho(simData, molnum)
     view(ug)
+    #movie(ug,simdata,molnum)
+    
+def movie(ug,simdata,molnum)
+    time = len(simData['trial0']['simulation']['dend']['concentrations'][0,0])
+    for ms in time:
+        getMoleculeConcForEachVoxel(simData,ms, molnum)
+        #updatescalars?
+        ug.point_data.scalars = np.repeat(concentrations, 8)
+        refresh window
