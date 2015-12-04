@@ -70,11 +70,30 @@ def unstructuredGridMorpho(simData, molnum):
 def view(dataset):
     """ Open up a mayavi scene and display the dataset in it.
     """
-    fig = mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0, 0, 0),
-                      figure=dataset.class_name[3:])
+    fig = mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0, 0, 0),)
+                      
     surf = mlab.pipeline.surface(dataset, opacity=0.1)
+    
     mlab.pipeline.surface(mlab.pipeline.extract_edges(surf),
                             color=(0, 0, 0), )
+
+def anim():
+    """Animate the b1 box."""
+    while 1:
+        b1.x = b1.x + b1.v*0.1
+        if b1.x > 2.5 or b1.x < -2.5:
+            b1.v = -b1.v
+        yield
+        
+@mlab.animate
+def anim():
+    f = mlab.gcf()
+    while 1:
+        f.scene.camera.azimuth(10)
+        f.scene.render()
+        yield
+    
+a = anim() # Starts the animation.
 
 def getMoleculeConcForEachVoxel(simData, ms, molnum):
     #Function takes data file and returns array concentrations 
@@ -97,10 +116,10 @@ if __name__ == '__main__':
     view(ug)
     #movie(ug,simdata,molnum)
     
-def movie(ug,simdata,molnum)
-    time = len(simData['trial0']['simulation']['dend']['concentrations'][0,0])
-    for ms in time:
-        getMoleculeConcForEachVoxel(simData,ms, molnum)
-        #updatescalars?
-        ug.point_data.scalars = np.repeat(concentrations, 8)
-        refresh window
+#def movie(ug,simdata,molnum)
+#    time=something from simData
+#    for ms in time:
+#        getMoleculeConcForEachVoxel(simData,ms, molnum)
+#        #updatescalars?
+#        ug.point_data.scalars = np.repeat(concentrations, 8)
+#        refresh window
