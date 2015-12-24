@@ -49,11 +49,9 @@ def unstructuredGridMorpho(simData, molnum):
     ug = tvtk.UnstructuredGrid(points=points)
     ug.set_cells(voxel_type, voxels)
     
-    concentrations = np.arange(grid.shape[0])
     concentrations = getMoleculeConcForEachVoxel(simData, 0, molnum)   # Have this pass less through it ********************
     #temperature = np.repeat(colors, 8)
 
-    #velocity = random.randn(points.shape[0], points.shape[1]) # Can show direction of predominant molecule movement at some point
     ug.point_data.scalars = np.repeat(concentrations, 8)
     ug.point_data.scalars.name = 'concentrations'
     # Some vectors.
@@ -67,33 +65,36 @@ def unstructuredGridMorpho(simData, molnum):
 
 # Now view the data.
 @mlab.show
-def view(dataset):
+def view(ug):
     """ Open up a mayavi scene and display the dataset in it.
     """
     fig = mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0, 0, 0),)
                       
-    surf = mlab.pipeline.surface(dataset, opacity=0.1)
+    surf = mlab.pipeline.surface(ug, opacity=0.1)
     
     mlab.pipeline.surface(mlab.pipeline.extract_edges(surf),
                             color=(0, 0, 0), )
 
-def anim():
-    """Animate the b1 box."""
-    while 1:
-        b1.x = b1.x + b1.v*0.1
-        if b1.x > 2.5 or b1.x < -2.5:
-            b1.v = -b1.v
-        yield
         
 @mlab.animate
-def anim():
+def anim(ug):
     f = mlab.gcf()
-    while 1:
-        f.scene.camera.azimuth(10)
-        f.scene.render()
+    for i in range(10):
+        try:
+            concentrations = getMoleculeConcForEachVoxel(simData, i*199, molnum)
+            ug.point_data.scalars = np.repeat(concentrations, 8)
+            ug.point_data.scalars.name = 'concentrations'
+            surf = mlab.pipeline.surface(ug, opacity=0.1)            
+            mlab.pipeline.surface(mlab.pipeline.extract_edges(surf),
+                            color=(0, 0, 0), )
+            print(concentrations)
+            #f.scene.camera.azimuth(10)  #Rotates camera by 10
+            f.scene.render()
+        except AttributeError:
+            pass
         yield
-    
-a = anim() # Starts the animation.
+      
+
 
 def getMoleculeConcForEachVoxel(simData, ms, molnum):
     #Function takes data file and returns array concentrations 
@@ -102,8 +103,8 @@ def getMoleculeConcForEachVoxel(simData, ms, molnum):
     #Function that displays unstructured grid 
 
     '''Must make the following generic for instances with A. Varying sizes. B.No Soma  etc..''' #################################<=======
-    dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][molnum,:,ms] #takes [0'th molecule, all voxel's of it's data, 0'th milisecond)
-    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][molnum,:,ms] 
+    dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][ms,:,molnum] #takes [milisecond, all voxel's of it's data, molecule of interest)
+    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][ms,:,molnum] 
     wholeCellSnapshot = np.concatenate((dendSnapshot,somaSnapshot),axis=0)
     return wholeCellSnapshot
 
@@ -111,11 +112,12 @@ def getMoleculeConcForEachVoxel(simData, ms, molnum):
 if __name__ == '__main__':
     simData = h5.File(sys.argv[1],"r")
     molname=sys.argv[2]
-    molnum=5 #place holder for function that converts molname to num
+    molnum=0 #place holder for function that converts molname to num
     ug = unstructuredGridMorpho(simData, molnum)
+    a = anim(ug) # Starts the animation.
     view(ug)
-    #movie(ug,simdata,molnum)
-    
+     #movie(ug,simdata,molnum)
+     
 #def movie(ug,simdata,molnum)
 #    time=something from simData
 #    for ms in time:
