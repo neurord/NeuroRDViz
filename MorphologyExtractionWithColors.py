@@ -2,7 +2,6 @@ from __future__ import print_function, division
 
 # Delete from numpy import array, arange, random
 import numpy as np
-from numpy import array, arange, random
 from tvtk.api import tvtk
 from mayavi.scripts import mayavi2
 import h5py as h5
@@ -11,7 +10,6 @@ import pandas as pd
 from mayavi import mlab
 from mayavi.sources.vtk_data_source import VTKDataSource
 
-pandasyn=1
 
 #include simData arguments to main once scripts are codependent
 def unstructuredGridMorpho(simData, molnum):
@@ -76,23 +74,26 @@ def view(ug):
                             color=(0, 0, 0), )
 
         
-@mlab.animate
+@mlab.animate(delay=10, ui=False)
 def anim(ug):
     f = mlab.gcf()
-    for i in range(10):
+    
+    for i in range(len(simData['trial0']['simulation']['dend']['times'])):
         try:
-            concentrations = getMoleculeConcForEachVoxel(simData, i*199, molnum)
-            ug.point_data.scalars = np.repeat(concentrations, 8)
-            ug.point_data.scalars.name = 'concentrations'
+            concentrations = getMoleculeConcForEachVoxel(simData, i, molnum)
+            ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
             surf = mlab.pipeline.surface(ug, opacity=0.1)            
             mlab.pipeline.surface(mlab.pipeline.extract_edges(surf),
                             color=(0, 0, 0), )
-            print(concentrations)
+            #print(concentrations)
             #f.scene.camera.azimuth(10)  #Rotates camera by 10
             f.scene.render()
         except AttributeError:
             pass
         yield
+        
+        #Increase Start/stop/delay window size
+        #Adjust default - x10
       
 
 
@@ -116,12 +117,3 @@ if __name__ == '__main__':
     ug = unstructuredGridMorpho(simData, molnum)
     a = anim(ug) # Starts the animation.
     view(ug)
-     #movie(ug,simdata,molnum)
-     
-#def movie(ug,simdata,molnum)
-#    time=something from simData
-#    for ms in time:
-#        getMoleculeConcForEachVoxel(simData,ms, molnum)
-#        #updatescalars?
-#        ug.point_data.scalars = np.repeat(concentrations, 8)
-#        refresh window
