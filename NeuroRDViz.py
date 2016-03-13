@@ -1,7 +1,10 @@
 from __future__ import print_function, division
+import time
 import os
 os.environ['ETS_TOOLKIT'] = 'qt4'
 os.environ['QT_API'] = 'pyqt'
+import sip 
+sip.setapi('Qstring',2)
 from pyface.qt import QtGui, QtCore
 
 from traits.api import HasTraits, Instance, on_trait_change
@@ -18,26 +21,26 @@ from mayavi.sources.vtk_data_source import VTKDataSource
 import h5py as h5
 import sys
 
-globalnum = 0
 ################################################################################
 #The actual visualization
 class Visualization(HasTraits):
     scene = Instance(MlabSceneModel, ())
-    
+
     @on_trait_change('scene.activated')
     def update_plot(self):
         # This function is called when the view is opened. We don't
         # populate the scene when the view is not yet open, as some
-        # VTK features require a GLContext.     
-                      
-        surf = mlab.pipeline.surface(create_morphology(simData), opacity=0.1)
-    
+        # VTK features require a GLContext.  
+        print("In update_plot")
+        self.ug=create_morphology(simData)  
+        surf = mlab.pipeline.surface(self.ug, opacity=0.1)
+
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0), )
         #anim(create_morphology(), 0)
         
     # the layout of the dialog created
     view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene),
-                     height=250, width=300, show_label=False),
+                     height=250, width=300),
                 resizable=True # We need this to resize with the parent widget
                 )
 
@@ -80,20 +83,22 @@ def create_morphology(simData):
 
 def get_voxel_molecule_concs(ms, simData, molnum):
     '''Must make the following generic for instances with A. Varying sizes. B.No Soma  etc..''' #################################<=======
-    dendSnapshot = get_simData(get_fileName())['trial0']['simulation']['dend']['concentrations'][ms,:,molnum] #takes [milisecond, all voxel's of it's data, molecule of interest)
-    somaSnapshot = get_simData(get_fileName())['trial0']['simulation']['soma']['concentrations'][ms,:,molnum] 
+    dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][ms,:,molnum] #takes [milisecond, all voxel's of it's data, molecule of interest)
+    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][ms,:,molnum] 
     wholeCellSnapshot = np.concatenate((dendSnapshot,somaSnapshot),axis=0)
     return wholeCellSnapshot
 
 class MayaviQWidget(QtGui.QWidget):
-    
+    animator = None
+    currentFrame = 0
     def __init__(self, parent=None):
         QtGui.QWidget.__init__(self, parent)
         layout = QtGui.QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
         self.visualization = Visualization()
-
+        print("In MayaviQWidget init")
+        
         # If you want to debug, beware that you need to remove the Qt
         # input hook.
         #QtCore.pyqtRemoveInputHook()
@@ -101,60 +106,52 @@ class MayaviQWidget(QtGui.QWidget):
         #QtCore.pyqtRestoreInputHook()
 
         # The edit_traits call will generate the widget to embed.
-        self.ui = self.visualization.edit_traits(parent=self,
-                                                 kind='subpanel').control
+        self.ui = self.visualization.edit_traits(parent=self, kind='subpanel').control
         layout.addWidget(self.ui)
         self.ui.setParent(self)
     
     def molecule_selected(self, text):
-        simData = get_simData(get_fileName())
-        globalnum = molecule_to_number(text, simData)
-        #a = anim(create_morphology(simData), simData, molnum)
-        print("in molecule_selected", text,globalnum)
-        a = anim(create_morphology(simData), simData, 0)
+        #simData = get_simData(get_fileName())       
+        molnum = molecule_to_number(text, simData)
+        print("in molecule_selected", text, molnum)
+        if molnum != None: #This is necessary otherwise ~anim-loop-obect will be instantiated initially with whatever conditions passed
+            if self.animator != None:
+                self.animator.close()
+            self.animator = anim(create_morphology(simData), simData, molnum, self)
+            
+    def setCurrentFrame(self, frame):
+        self.currentFrame = frame
+
+    def getCurrentFrame(self):
+        return self.currentFrame
         
-@mlab.animate(delay=1000) #This is a "decorator" - dynamically alters method function w/o need for subclasses
-def anim(ug, simData, molnum): 
+@mlab.animate(delay=10) #This is a "decorator" - dynamically alters method function w/o need for subclasses
+def anim(ug, simData, molnum, frameTracker): 
     print("in anim: test")
+    print("in anim, before loop, molnum = ", molnum)
     f = mlab.gcf()
-    #molnum = mayavi_widget.molecule_selected(mayavi_widget.molecule_selected, )
-    for i in range(len(simData['trial0']['simulation']['dend']['times'])):
-        try:
-            molnum = globalnum
-            print("in anim molnum = ",molnum)
-            print("in anim global = " ,globalnum)
-            concentrations = get_voxel_molecule_concs(i, simData, 1)
-            ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
-            print("before surf----------------------____")                        
-            surf = mlab.pipeline.surface(ug, opacity=0.1)            
-            print("before pipeline----------------------____")
-            mlab.pipeline.surface(mlab.pipeline.extract_edges(surf),
-                            color=(0, 0, 0), )
-            #print(concentrations)
-            #f.scene.camera.azimuth(10)  #Rotates camera by 10
-            f.scene.render()
-        except AttributeError:
-            pass
-        if True != True: #set to something you want to make cause anim to break - assuming you find out how to have it read changes outside of the loop
-                break;
-        yield
-    print("in anim, outside of loop, global = ", globalnum)
-    
-        #Increase Start/stop/delay window size
-        #Adjust default - x10
+    #molnum = mayavi_widget.molecule_selected(mayavi_widget.molecule_selected)
+    iterations = len(simData['trial0']['simulation']['dend']['times'])
+    currentFrame = frameTracker.getCurrentFrame()
+    while currentFrame < iterations:
+        print("in anim molnum = ",molnum)
+        concentrations = get_voxel_molecule_concs(currentFrame, simData, molnum)
+        print("concentrations",concentrations)
+        ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
+        print("before surf----------------------____")                        
+        surf = mlab.pipeline.surface(ug, opacity=0.1)            
+        print("before pipeline----------------------____")
+        mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
         
-    '''tip for accelerating animation:
-        obj.scene.disable_render = True
-        # Do all your scripting that takes ages.
-        # ...
-        # Once done, do the following:
-        obj.scene.disable_render = False
-        '''
-        
+        f.scene.render()
+        print("currentFrame=",currentFrame)
+        currentFrame += 1
+        frameTracker.setCurrentFrame(currentFrame)
+        yield 
 
       
-def sendOutofWidget(morphology, molname, simData):
-    print(molname, molecule_to_number(molname,simData))
+def sendOutofWidget(molnum):
+    print(molnum)
     #a = anim(create_morphology(simData), simData)
     
 def get_molecule_list(simData):
@@ -163,9 +160,6 @@ def get_molecule_list(simData):
 def get_simData(fileName):
     simData = h5.File(fileName,"r")
     return simData
-
-def get_fileName():
-    return sys.argv[1]
 
 def molecule_to_number(molecule, simData):
     return np.where(simData['trial0']['output']['output_species'][:]==molecule)[0][0]    
@@ -178,30 +172,26 @@ if __name__ == "__main__":
     app = QtGui.QApplication.instance()
     '''GUI = Window()'''
     container = QtGui.QWidget()
-    switch = False
     #container.setWindowTitle("NeuoRD Visualization")
     # define a "complex" layout to test the behaviour
     layout = QtGui.QGridLayout(container)
     comboBox = QtGui.QComboBox(container)
-    fileName = sys.argv[1]
+    try:
+        fileName=fname
+    except NameError:
+        fileName = sys.argv[1]
     simData = get_simData(fileName)   
     moleculeList = get_molecule_list(simData) #simdata.... then past just the list below
     for moleculeType in range(len(moleculeList)):
         comboBox.addItem(moleculeList[moleculeType])
-    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
-    label_list = [] 
-    label_list.append(comboBox)
-    # put some stuff around mayavi
+    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.    
     mayavi_widget = MayaviQWidget(container)
     comboBox.activated[str].connect(mayavi_widget.molecule_selected)
-
-    
-
     layout.addWidget(mayavi_widget, 1, 1) # This is visualization of morphology
     container.show()
     window = QtGui.QMainWindow()
     window.setCentralWidget(container)
     window.show()
     print("after window shown")
-    
     app.exec_() # Start the main event loop.
+    
