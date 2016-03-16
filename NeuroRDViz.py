@@ -3,7 +3,7 @@ import time
 import os
 os.environ['ETS_TOOLKIT'] = 'qt4'
 os.environ['QT_API'] = 'pyqt'
-import sip 
+import sip
 sip.setapi('Qstring',2)
 from pyface.qt import QtGui, QtCore
 
@@ -30,14 +30,14 @@ class Visualization(HasTraits):
     def update_plot(self):
         # This function is called when the view is opened. We don't
         # populate the scene when the view is not yet open, as some
-        # VTK features require a GLContext.  
+        # VTK features require a GLContext.
         print("In update_plot")
-        self.ug=create_morphology(simData)  
+        self.ug=create_morphology(simData)
         surf = mlab.pipeline.surface(self.ug, opacity=0.1)
 
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0), )
         #anim(create_morphology(), 0)
-        
+
     # the layout of the dialog created
     view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene),
                      height=250, width=300),
@@ -48,7 +48,7 @@ class Visualization(HasTraits):
 ################################################################################
 
 def create_morphology(simData):
- 
+
     grid = np.array(simData['trial0']['model']['grid']).view(np.recarray)
     xmin = np.min((grid.x0, grid.x1, grid.x2, grid.x3), axis=0)
     ymin = np.min((grid.y0, grid.y1, grid.y2, grid.y3), axis=0)
@@ -69,7 +69,7 @@ def create_morphology(simData):
     voxel_type = tvtk.Hexahedron().cell_type # VTK_HEXAHEDRON == 12
     ug = tvtk.UnstructuredGrid(points=points)
     ug.set_cells(voxel_type, voxels)
-    
+
     concentrations = get_voxel_molecule_concs(0, simData, 0)   # Have this pass less through it ********************
     #temperature = np.repeat(colors, 8)
 
@@ -78,13 +78,13 @@ def create_morphology(simData):
     # Some vectors.
     #ug1.point_data.vectors = velocity
     #ug1.point_data.vectors.name = 'velocity'
-    
+
     return ug
 
 def get_voxel_molecule_concs(ms, simData, molnum):
     '''Must make the following generic for instances with A. Varying sizes. B.No Soma  etc..''' #################################<=======
     dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][ms,:,molnum] #takes [milisecond, all voxel's of it's data, molecule of interest)
-    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][ms,:,molnum] 
+    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][ms,:,molnum]
     wholeCellSnapshot = np.concatenate((dendSnapshot,somaSnapshot),axis=0)
     return wholeCellSnapshot
 
@@ -98,7 +98,7 @@ class MayaviQWidget(QtGui.QWidget):
         layout.setSpacing(0)
         self.visualization = Visualization()
         print("In MayaviQWidget init")
-        
+
         # If you want to debug, beware that you need to remove the Qt
         # input hook.
         #QtCore.pyqtRemoveInputHook()
@@ -109,24 +109,24 @@ class MayaviQWidget(QtGui.QWidget):
         self.ui = self.visualization.edit_traits(parent=self, kind='subpanel').control
         layout.addWidget(self.ui)
         self.ui.setParent(self)
-    
+
     def molecule_selected(self, text):
-        #simData = get_simData(get_fileName())       
+        #simData = get_simData(get_fileName())
         molnum = molecule_to_number(text, simData)
         print("in molecule_selected", text, molnum)
         if molnum != None: #This is necessary otherwise ~anim-loop-obect will be instantiated initially with whatever conditions passed
             if self.animator != None:
                 self.animator.close()
             self.animator = anim(create_morphology(simData), simData, molnum, self)
-            
+
     def setCurrentFrame(self, frame):
         self.currentFrame = frame
 
     def getCurrentFrame(self):
         return self.currentFrame
-        
+
 @mlab.animate(delay=10) #This is a "decorator" - dynamically alters method function w/o need for subclasses
-def anim(ug, simData, molnum, frameTracker): 
+def anim(ug, simData, molnum, frameTracker):
     print("in anim: test")
     print("in anim, before loop, molnum = ", molnum)
     f = mlab.gcf()
@@ -138,22 +138,22 @@ def anim(ug, simData, molnum, frameTracker):
         concentrations = get_voxel_molecule_concs(currentFrame, simData, molnum)
         print("concentrations",concentrations)
         ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
-        print("before surf----------------------____")                        
-        surf = mlab.pipeline.surface(ug, opacity=0.1)            
+        print("before surf----------------------____")
+        surf = mlab.pipeline.surface(ug, opacity=0.1)
         print("before pipeline----------------------____")
         mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
-        
+
         f.scene.render()
         print("currentFrame=",currentFrame)
         currentFrame += 1
         frameTracker.setCurrentFrame(currentFrame)
-        yield 
+        yield
 
-      
+
 def sendOutofWidget(molnum):
     print(molnum)
     #a = anim(create_morphology(simData), simData)
-    
+
 def get_molecule_list(simData):
     return simData['trial0']['output']['output_species']
 
@@ -162,8 +162,8 @@ def get_simData(fileName):
     return simData
 
 def molecule_to_number(molecule, simData):
-    return np.where(simData['trial0']['output']['output_species'][:]==molecule)[0][0]    
-    
+    return np.where(simData['trial0']['output']['output_species'][:]==molecule)[0][0]
+
 
 if __name__ == "__main__":
     # Don't create a new QApplication, it would unhook the Events
@@ -180,11 +180,11 @@ if __name__ == "__main__":
         fileName=fname
     except NameError:
         fileName = sys.argv[1]
-    simData = get_simData(fileName)   
+    simData = get_simData(fileName)
     moleculeList = get_molecule_list(simData) #simdata.... then past just the list below
     for moleculeType in range(len(moleculeList)):
         comboBox.addItem(moleculeList[moleculeType])
-    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.    
+    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
     mayavi_widget = MayaviQWidget(container)
     comboBox.activated[str].connect(mayavi_widget.molecule_selected)
     layout.addWidget(mayavi_widget, 1, 1) # This is visualization of morphology
@@ -194,4 +194,3 @@ if __name__ == "__main__":
     window.show()
     print("after window shown")
     app.exec_() # Start the main event loop.
-    
