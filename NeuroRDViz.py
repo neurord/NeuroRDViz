@@ -32,8 +32,8 @@ class Visualization(HasTraits):
         # populate the scene when the view is not yet open, as some
         # VTK features require a GLContext.
         print("In update_plot")
-        self.ug=create_morphology(simData)
-        surf = mlab.pipeline.surface(self.ug, opacity=0.1)
+        ug=create_morphology(simData)
+        surf = mlab.pipeline.surface(ug, opacity=0.1)
 
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0), )
         #anim(create_morphology(), 0)
@@ -136,11 +136,9 @@ def anim(ug, simData, molnum, frameTracker):
     while currentFrame < iterations:
         print("in anim molnum = ",molnum)
         concentrations = get_voxel_molecule_concs(currentFrame, simData, molnum)
-        print("concentrations",concentrations)
         ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
-        print("before surf----------------------____")
+        ug.point_data.scalars.name = 'concentrations'
         surf = mlab.pipeline.surface(ug, opacity=0.1)
-        print("before pipeline----------------------____")
         mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
 
         f.scene.render()
