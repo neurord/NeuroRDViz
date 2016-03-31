@@ -49,15 +49,14 @@ class Visualization(HasTraits):
 
 def create_morphology(simData):
 
-    grid = np.array(simData['trial0']['model']['grid']).view(np.recarray)
+    grid = np.array(getMorphologyGrid()).view(np.recarray)                               #change
     xmin = np.min((grid.x0, grid.x1, grid.x2, grid.x3), axis=0)
     ymin = np.min((grid.y0, grid.y1, grid.y2, grid.y3), axis=0)
     zmin = np.min((grid.z0, grid.z1, grid.z2, grid.z3), axis=0)
     xmax = np.max((grid.x0, grid.x1, grid.x2, grid.x3), axis=0)
     ymax = np.max((grid.y0, grid.y1, grid.y2, grid.y3), axis=0)
     zmax = np.max((grid.z0, grid.z1, grid.z2, grid.z3), axis=0)
-    zmax[:]=0.5
-    zmin[:]=0.0
+
     points = np.array((
          (xmin, ymin, zmin), (xmax, ymin, zmin), (xmax, ymax, zmin), (xmin, ymax, zmin),
          (xmin, ymin, zmax), (xmax, ymin, zmax), (xmax, ymax, zmax), (xmin, ymax, zmax)))
@@ -67,26 +66,37 @@ def create_morphology(simData):
     voxels = np.arange(points.shape[0]).reshape(-1, 8)
 
     voxel_type = tvtk.Hexahedron().cell_type # VTK_HEXAHEDRON == 12
-    ug = tvtk.UnstructuredGrid(points=points)
+    ug = tvtk.UnstructuredGrid(points=points) 
     ug.set_cells(voxel_type, voxels)
 
-    concentrations = get_voxel_molecule_concs(0, simData, 0)   # Have this pass less through it ********************
-    #temperature = np.repeat(colors, 8)
+    #This sets them all to zeros 
+    #numVoxels = len(grid.x0)                                                                           #can be redone in setDef
+    #concentrations = np.zeros(numVoxels)   # Have this pass less through it ********************
 
-    ug.point_data.scalars = np.repeat(concentrations, 8)
-    ug.point_data.scalars.name = 'concentrations'
-    # Some vectors.
-    #ug1.point_data.vectors = velocity
-    #ug1.point_data.vectors.name = 'velocity'
+    #ug.point_data.scalars = np.repeat(concentrations, 8)
+    #ug.point_data.scalars.name = 'concentrations'
 
     return ug
 
-def get_voxel_molecule_concs(ms, simData, molnum):
-    '''Must make the following generic for instances with A. Varying sizes. B.No Soma  etc..''' #################################<=======
-    dendSnapshot = simData['trial0']['simulation']['dend']['concentrations'][ms,:,molnum] #takes [milisecond, all voxel's of it's data, molecule of interest)
-    somaSnapshot = simData['trial0']['simulation']['soma']['concentrations'][ms,:,molnum]
-    wholeCellSnapshot = np.concatenate((dendSnapshot,somaSnapshot),axis=0)
-    return wholeCellSnapshot
+def get_voxel_molecule_concs(ms, simData, molecule):
+    sets = simData['model']['output'].keys() #just once
+    gridpoints=len(getMorphologyGrid())       #justonce
+    outputSetSnapshot=np.zeros(0)
+    for each in sets[1:]:
+        molnum = moleculeToNumber(molecule, each, simData)        #once per molecule (not once per timestep)
+        if molnum > -1:
+            tempSnapshot = simData['trial0']['output'][each]['population'][ms,:,molnum]
+            if len(tempSnapshot) == gridpoints:
+                outputSetSnapshot=tempSnapshot
+                return outputSetSnapshot
+            else:
+                outputSetSnapshot=np.concatenate((outputSetSnapshot,tempSnapshot),axis=0)
+    if len(outputSetSnapshot)==gridpoints:
+        tempSnapshot=np.zeros(gridpoints-len(outputSetSnapshot))
+        outputSetSnapshot=np.concatenate((outputSetSnapshot,tempSnapshot),axis=0)
+    #if outputSetSnapshot == []:                                                            #change! - account for molecule non-existent in both sets
+    #    return __main__set
+    return outputSetSnapshot
 
 class MayaviQWidget(QtGui.QWidget):
     animator = None
@@ -111,13 +121,10 @@ class MayaviQWidget(QtGui.QWidget):
         self.ui.setParent(self)
 
     def molecule_selected(self, text):
-        #simData = get_simData(get_fileName())
-        molnum = molecule_to_number(text, simData)
-        print("in molecule_selected", text, molnum)
-        if molnum != None: #This is necessary otherwise ~anim-loop-obect will be instantiated initially with whatever conditions passed
+        if text != None: #This is necessary otherwise ~anim-loop-obect will be instantiated initially with whatever conditions passed
             if self.animator != None:
                 self.animator.close()
-            self.animator = anim(create_morphology(simData), simData, molnum, self)
+            self.animator = anim(create_morphology(simData), simData, text, self)
 
     def setCurrentFrame(self, frame):
         self.currentFrame = frame
@@ -126,43 +133,44 @@ class MayaviQWidget(QtGui.QWidget):
         return self.currentFrame
 
 @mlab.animate(delay=10) #This is a "decorator" - dynamically alters method function w/o need for subclasses
-def anim(ug, simData, molnum, frameTracker):
-    print("in anim: test")
-    print("in anim, before loop, molnum = ", molnum)
+def anim(ug, simData, molecule, frameTracker):
     f = mlab.gcf()
-    #molnum = mayavi_widget.molecule_selected(mayavi_widget.molecule_selected)
-    iterations = len(simData['trial0']['simulation']['dend']['times'])
+    iterations = len(simData['trial0']['output']['all']['times'])                                             #change! all to chosen outputSets from getSomething
     currentFrame = frameTracker.getCurrentFrame()
     while currentFrame < iterations:
-        print("in anim molnum = ",molnum)
-        concentrations = get_voxel_molecule_concs(currentFrame, simData, molnum)
+        concentrations = get_voxel_molecule_concs(currentFrame, simData, molecule)
         ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
         ug.point_data.scalars.name = 'concentrations'
         surf = mlab.pipeline.surface(ug, opacity=0.1)
         mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
 
         f.scene.render()
-        print("currentFrame=",currentFrame)
         currentFrame += 1
         frameTracker.setCurrentFrame(currentFrame)
         yield
 
 
-def sendOutofWidget(molnum):
-    print(molnum)
-    #a = anim(create_morphology(simData), simData)
-
-def get_molecule_list(simData):
-    return simData['trial0']['output']['output_species']
-
-def get_simData(fileName):
+def getMoleculeList(simData):
+    return simData['model']['species']
+                                            
+def get_h5simData(fileName):
     simData = h5.File(fileName,"r")
     return simData
+    
+def getMorphologyGrid():
+    return simData['model']['grid']
 
-def molecule_to_number(molecule, simData):
-    return np.where(simData['trial0']['output']['output_species'][:]==molecule)[0][0]
+#def getSets():
+    #sets = 
+    #return sets
 
-
+def moleculeToNumber(molecule, outputSet, simData):
+    indices=np.where(simData['model']['output'][outputSet]['species'][:]==molecule)[0]
+    if len(indices) == 1:
+        return indices[0]
+    else:
+        return -1              
+ 
 if __name__ == "__main__":
     # Don't create a new QApplication, it would unhook the Events
     # set by Traits on the existing QApplication. Simply use the
@@ -178,8 +186,8 @@ if __name__ == "__main__":
         fileName=fname
     except NameError:
         fileName = sys.argv[1]
-    simData = get_simData(fileName)
-    moleculeList = get_molecule_list(simData) #simdata.... then past just the list below
+    simData = get_h5simData(fileName)
+    moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
     for moleculeType in range(len(moleculeList)):
         comboBox.addItem(moleculeList[moleculeType])
     layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
