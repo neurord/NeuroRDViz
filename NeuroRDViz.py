@@ -28,20 +28,16 @@ class Visualization(HasTraits):
 
     @on_trait_change('scene.activated')
     def update_plot(self):
-        # This function is called when the view is opened. We don't
-        # populate the scene when the view is not yet open, as some
-        # VTK features require a GLContext.
-        print("In update_plot")
         ug=create_morphology(simData)
         surf = mlab.pipeline.surface(ug, opacity=0.1)
 
-        self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0), )
-        #anim(create_morphology(), 0)
+        self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
+
 
     # the layout of the dialog created
     view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene),
-                     height=250, width=300),
-                resizable=True # We need this to resize with the parent widget
+                     height=250, width=300, show_label=False),
+                resizable=True  
                 )
 
 
@@ -69,12 +65,6 @@ def create_morphology(simData):
     ug = tvtk.UnstructuredGrid(points=points) 
     ug.set_cells(voxel_type, voxels)
 
-    #This sets them all to zeros 
-    #numVoxels = len(grid.x0)                                                                           #can be redone in setDef
-    #concentrations = np.zeros(numVoxels)   # Have this pass less through it ********************
-
-    #ug.point_data.scalars = np.repeat(concentrations, 8)
-    #ug.point_data.scalars.name = 'concentrations'
 
     return ug
 
@@ -107,13 +97,6 @@ class MayaviQWidget(QtGui.QWidget):
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
         self.visualization = Visualization()
-        print("In MayaviQWidget init")
-
-        # If you want to debug, beware that you need to remove the Qt
-        # input hook.
-        #QtCore.pyqtRemoveInputHook()
-        #import pdb ; pdb.set_trace()
-        #QtCore.pyqtRestoreInputHook()
 
         # The edit_traits call will generate the widget to embed.
         self.ui = self.visualization.edit_traits(parent=self, kind='subpanel').control
@@ -141,11 +124,13 @@ def anim(ug, simData, molecule, frameTracker):
         concentrations = get_voxel_molecule_concs(currentFrame, simData, molecule)
         ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
         ug.point_data.scalars.name = 'concentrations'
-        surf = mlab.pipeline.surface(ug, opacity=0.1)
-        mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
-
+        surf = mlab.pipeline.surface(ug, opacity=0.1, colormap='hot')
+        mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0),)
+        mlab.colorbar(title='Concentration', orientation='vertical', nb_labels=3)
         f.scene.render()
         currentFrame += 1
+        #getQtWindow().label.setText(currentFrame+ "ms")
+        print("Progress:",currentFrame)
         frameTracker.setCurrentFrame(currentFrame)
         yield
 
@@ -159,10 +144,9 @@ def get_h5simData(fileName):
     
 def getMorphologyGrid():
     return simData['model']['grid']
-
-#def getSets():
-    #sets = 
-    #return sets
+    
+def getQtWindow():
+    return container
 
 def moleculeToNumber(molecule, outputSet, simData):
     indices=np.where(simData['model']['output'][outputSet]['species'][:]==molecule)[0]
@@ -182,6 +166,10 @@ if __name__ == "__main__":
     # define a "complex" layout to test the behaviour
     layout = QtGui.QGridLayout(container)
     comboBox = QtGui.QComboBox(container)
+    label = QtGui.QLabel(container)
+    label.setText("Progress: ms")
+    label.setGeometry(100,100, 100, 100)
+    label.setAlignment(QtCore.Qt.AlignHCenter|QtCore.Qt.AlignVCenter)
     try:
         fileName=fname
     except NameError:
@@ -198,5 +186,4 @@ if __name__ == "__main__":
     window = QtGui.QMainWindow()
     window.setCentralWidget(container)
     window.show()
-    print("after window shown")
     app.exec_() # Start the main event loop.
