@@ -75,7 +75,7 @@ def get_voxel_molecule_concs(ms, simData, molecule):
     for each in sets[1:]:
         molnum = moleculeToNumber(molecule, each, simData)        #once per molecule (not once per timestep)
         if molnum > -1:
-            tempSnapshot = simData['trial0']['output'][each]['population'][ms,:,molnum]
+            tempSnapshot = simData['trial0']['output'][each]['population'][ms,:,molnum] # Must divide by avagadro's number to get concentration. and then divide by voxel size to get concentration
             if len(tempSnapshot) == gridpoints:
                 outputSetSnapshot=tempSnapshot
                 return outputSetSnapshot
@@ -118,15 +118,16 @@ class MayaviQWidget(QtGui.QWidget):
 @mlab.animate(delay=10) #This is a "decorator" - dynamically alters method function w/o need for subclasses
 def anim(ug, simData, molecule, frameTracker):
     f = mlab.gcf()
-    iterations = len(simData['trial0']['output']['all']['times'])                                             #change! all to chosen outputSets from getSomething
+    iterations = len(simData['trial0']['output']['all']['times'])  #times[1] - times[0] = dt                                         #change! all to chosen outputSets from getSomething
     currentFrame = frameTracker.getCurrentFrame()
+    mlab.colorbar(title='Concentration', orientation='vertical', nb_labels=3) 
+    surf = mlab.pipeline.surface(ug)                                              # Decide how max/min color values are assigned.
+    mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) 
+
     while currentFrame < iterations:
         concentrations = get_voxel_molecule_concs(currentFrame, simData, molecule)
         ug.point_data.scalars = np.repeat(concentrations, 8) #make 8 to static variable of "voxelpts"
-        ug.point_data.scalars.name = 'concentrations'
-        surf = mlab.pipeline.surface(ug, opacity=0.1, colormap='hot')
-        mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0),)
-        mlab.colorbar(title='Concentration', orientation='vertical', nb_labels=3)
+        ug.point_data.scalars.name = 'concentrations' 
         f.scene.render()
         currentFrame += 1
         #getQtWindow().label.setText(currentFrame+ "ms")
@@ -146,8 +147,7 @@ def getMorphologyGrid():
     return simData['model']['grid']
     
 def getQtWindow():
-    return container
-
+    return container 
 def moleculeToNumber(molecule, outputSet, simData):
     indices=np.where(simData['model']['output'][outputSet]['species'][:]==molecule)[0]
     if len(indices) == 1:
