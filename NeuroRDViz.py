@@ -15,7 +15,7 @@ from mayavi.core.ui.api import MayaviScene, MlabSceneModel, \
 import numpy as np
 from tvtk.api import tvtk
 from mayavi.scripts import mayavi2
-from mayavi import mlab
+from mayavi import mlab     ######## This line of code takes MUCH longer than anything else (be more selective in imports to expedite)
 from mayavi.sources.vtk_data_source import VTKDataSource
 
 import h5py as h5
@@ -23,8 +23,6 @@ import sys
 Avogadro=6.023e14
 mol_per_nM_u3=Avogadro*1e-15
 
-################################################################################
-#The actual visualization
 class Visualization(HasTraits):
     scene = Instance(MlabSceneModel, ())
 
@@ -32,7 +30,6 @@ class Visualization(HasTraits):
     def update_plot(self):
         ug=create_morphology(simData)
         surf = mlab.pipeline.surface(ug, opacity=1)
-
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
 
 
@@ -46,7 +43,7 @@ class Visualization(HasTraits):
 
 def create_morphology(simData):
 
-
+           
     grid = np.array(getMorphologyGrid()).view(np.recarray)                          
     xmin = np.min((grid.x0, grid.x1, grid.x2, grid.x3), axis=0)
     ymin = np.min((grid.y0, grid.y1, grid.y2, grid.y3), axis=0)
@@ -74,15 +71,11 @@ def create_morphology(simData):
 def get_voxel_molecule_conc(simData, moleculeType, out_location):
     grid_points=len(getMorphologyGrid())
     samples = out_location[moleculeType]['samples']
-    #volume = model.grid[:][/vol
-    #"snapshot" may now be the wrong name. Consider change:
     outputSet=np.zeros((samples,grid_points))
     for currentSet in out_location[moleculeType]['location'].keys():
         molnum = out_location[moleculeType]['location'][currentSet]['mol_index'] 
         voxels = out_location[moleculeType]['location'][currentSet]['elements'] 
-        
-        #NEEDS CHANGE: Must divide by avagadro's number to get concentration. and then divide by voxel size to get concentration
-        tempSnapshot = simData['trial0']['output'][currentSet]['population'][:,:,molnum] #Check 1st one.
+        tempSnapshot = simData['trial0']['output'][currentSet]['population'][:,:,molnum] 
         print(np.shape(tempSnapshot), np.shape(outputSet[:,voxels]))
         outputSet[:,voxels]=tempSnapshot
     outputSetConcs = population_list_to_concentration_list(outputSet, simData['model']['grid']['volume'])
@@ -91,12 +84,14 @@ def get_voxel_molecule_conc(simData, moleculeType, out_location):
 
 #Conert molecular population to molecular concentration
 def population_list_to_concentration_list(pop_list, voxel_volumes):
-    conc_list = np.zeros((len(pop_list),len(pop_list[0])))
+    conc_list = np.zeros(np.shape(pop_list))
     
     #Iterate through one timeframe of pop_list to divide each voxel's population by the ~[grid][voxel volume]
-    for z, pop_list_snapshot in enumerate(pop_list):
+    for z, pop_list_snapshot in enumerate(pop_list): #
         for i, (a,b) in enumerate(zip(pop_list_snapshot, voxel_volumes)):
             conc_list[z][i] = (a/b) * mol_per_nM_u3
+            
+    #print out a volumes[3] volumes[6] & conc_list[3] [6] with two types 
     return conc_list
 
 
@@ -104,6 +99,9 @@ class MayaviQWidget(QtGui.QWidget):
     animator = None
     currentFrame = 0
     f = mlab.gcf()
+    ug = tvtk.UnstructuredGrid()
+    surf = mlab.pipeline.surface(ug, opacity =1)
+    
     #unable to call functions within this space, sending methods to anim.
     def __init__(self, parent=None):
         QtGui.QWidget.__init__(self, parent)
@@ -134,7 +132,7 @@ class MayaviQWidget(QtGui.QWidget):
         
     
 
-@mlab.animate(delay=10) 
+@mlab.animate(delay=100) 
 def anim(ug, simData, moleculeType, frameTracker, f):
     
     out_location,dt,samples = get_mol_info(simData,simData['model']['output']['__main__']['species'][:],getMorphologyGrid())
@@ -142,23 +140,39 @@ def anim(ug, simData, moleculeType, frameTracker, f):
     iterations = len(simData['trial0']['output']['all']['times'])  #times[1] - times[0] = dt                                         #change! all to chosen outputSets from getSomething
     currentFrame = frameTracker.getCurrentFrame()
     population = get_voxel_molecule_conc(simData, moleculeType, out_location)
-    print(np.shape(population))
-    surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot')  # Decide how max/min color values are assigned.
-    mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) 
-    #mlab.colorbar(title='Concentration', orientation='vertical', nb_labels=7)
+       
    
+    
+    surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
+    mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) 
 
+    #Colorbar Unstructured Grid Kluge
+    colorbar_ug = ug
+    colorbar_ug_pop = [None] * 2
+    colorbar_ug_pop = np.min(population)
+    colorbar_ug_pop = np.max(population)
+    '''np.linspace(s,f,n) makes n evenly spaced numbers between s & f'''
+    print(population)
+    print(np.min(population))
+    print(np.max(population))
+    colorbar_ug.point_data.scalars = np.linspace(np.min(population),np.max(population),len(ug.get_cells().to_array()))  
+    colorbar_ug.point_data.scalars.name = 'concentrations'
+    colorbar_surf = mlab.pipeline.surface(colorbar_ug, opacity =0, colormap='hot')
+    if mlab.colorbar != None:
+        mlab.colorbar(object=colorbar_surf, title='Concentration', orientation='vertical', nb_labels=7)
+    
     while currentFrame < iterations:
-        mlab.colorbar(title='Concentration', orientation='vertical', nb_labels=7)
+        
         concentrations = population[currentFrame,:]
-        ug.point_data.scalars = np.repeat(concentrations, 8) 
+        ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
         ug.point_data.scalars.name = 'concentrations' 
         ug.modified()
-
+        print(concentrations)
         currentFrame += 1
         #getQtWindow().label.setText(currentFrame+ "ms")
         print("Progress:",currentFrame)
         frameTracker.setCurrentFrame(currentFrame)
+            
         yield
 
 
