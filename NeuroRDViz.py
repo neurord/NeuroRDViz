@@ -15,8 +15,9 @@ from mayavi.core.ui.api import MayaviScene, MlabSceneModel, \
 import numpy as np
 from tvtk.api import tvtk
 from mayavi.scripts import mayavi2
-from mayavi import mlab     ######## This line of code takes MUCH longer than anything else (be more selective in imports to expedite)
+from mayavi import mlab     ######## This line of code takes MUCH longer than anything else (be more selective in imports to expedite?)
 from mayavi.sources.vtk_data_source import VTKDataSource
+import mayavi
 
 import h5py as h5
 import sys
@@ -76,7 +77,6 @@ def get_voxel_molecule_conc(simData, moleculeType, out_location):
         molnum = out_location[moleculeType]['location'][currentSet]['mol_index'] 
         voxels = out_location[moleculeType]['location'][currentSet]['elements'] 
         tempSnapshot = simData['trial0']['output'][currentSet]['population'][:,:,molnum] 
-        print(np.shape(tempSnapshot), np.shape(outputSet[:,voxels]))
         outputSet[:,voxels]=tempSnapshot
     outputSetConcs = population_list_to_concentration_list(outputSet, simData['model']['grid']['volume'])
     return outputSetConcs
@@ -134,7 +134,7 @@ class MayaviQWidget(QtGui.QWidget):
 
 @mlab.animate(delay=100) 
 def anim(ug, simData, moleculeType, frameTracker, f):
-    
+
     out_location,dt,samples = get_mol_info(simData,simData['model']['output']['__main__']['species'][:],getMorphologyGrid())
     molnum = get_mol_index(simData, "all", moleculeType)
     iterations = len(simData['trial0']['output']['all']['times'])  #times[1] - times[0] = dt                                         #change! all to chosen outputSets from getSomething
@@ -145,34 +145,33 @@ def anim(ug, simData, moleculeType, frameTracker, f):
     
     surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
     mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) 
-
-    #Colorbar Unstructured Grid Kluge
-    colorbar_ug = ug
-    colorbar_ug_pop = [None] * 2
-    colorbar_ug_pop = np.min(population)
-    colorbar_ug_pop = np.max(population)
-    '''np.linspace(s,f,n) makes n evenly spaced numbers between s & f'''
-    print(population)
-    print(np.min(population))
-    print(np.max(population))
-    colorbar_ug.point_data.scalars = np.linspace(np.min(population),np.max(population),len(ug.get_cells().to_array()))  
-    colorbar_ug.point_data.scalars.name = 'concentrations'
-    colorbar_surf = mlab.pipeline.surface(colorbar_ug, opacity =0, colormap='hot')
-    if mlab.colorbar != None:
-        mlab.colorbar(object=colorbar_surf, title='Concentration', orientation='vertical', nb_labels=7)
+    surf.module_manager.scalar_lut_manager.data_range = [0, np.max(population)]
     
+    
+    lut = surf.module_manager.scalar_lut_manager.lut.table.to_array()
+    
+ 
+
+    #Colorbar Unstructured Grid kluge (keeps colorbar from changing each timestep)
+    colorbar_ug = ug
+    colorbar_ug.point_data.scalars = np.linspace(np.min(population),np.max(population),len(ug.get_cells().to_array()))  
+    colorbar_ug.point_data.scalars.name = 'concentratio
+    ns'
+    colorbar_surf = mlab.pipeline.surface(colorbar_ug, opacity =0, colormap='hot')
+    p = mlab.colorbar(object=colorbar_surf, title='Concentration', orientation='vertical', nb_labels=7)
+    p.visible = False
     while currentFrame < iterations:
         
         concentrations = population[currentFrame,:]
         ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
         ug.point_data.scalars.name = 'concentrations' 
-        ug.modified()
         print(concentrations)
+        print(surf.module_manager.scalar_lut_manager.data_range)
+        ug.modified()
         currentFrame += 1
         #getQtWindow().label.setText(currentFrame+ "ms")
-        print("Progress:",currentFrame)
+        #print("Progress:",currentFrame)
         frameTracker.setCurrentFrame(currentFrame)
-            
         yield
 
 
