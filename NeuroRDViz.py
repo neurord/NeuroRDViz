@@ -1,5 +1,4 @@
 from __future__ import print_function, division
-import time
 import os
 os.environ['ETS_TOOLKIT'] = 'qt4'
 os.environ['QT_API'] = 'pyqt'
@@ -14,10 +13,7 @@ from mayavi.core.ui.api import MayaviScene, MlabSceneModel, \
 
 import numpy as np
 from tvtk.api import tvtk
-from mayavi.scripts import mayavi2
 from mayavi import mlab     ######## This line of code takes MUCH longer than anything else (be more selective in imports to expedite?)
-from mayavi.sources.vtk_data_source import VTKDataSource
-import mayavi
 
 import h5py as h5
 import sys
@@ -30,12 +26,13 @@ class Visualization(HasTraits):
     @on_trait_change('scene.activated')
     def update_plot(self):
         ug=create_morphology(simData)
-        surf = self.scene.mlab.pipeline.surface(ug, opacity=1)
+        surf = mlab.pipeline.surface(ug, opacity=1)
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
 
 
     # the layout of the dialog created
-    view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene), height=250, width=300, show_label=False),
+    view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene),
+                     height=250, width=300, show_label=False),
                 resizable=True  
                 )
 
@@ -92,18 +89,7 @@ def population_to_concentration(pop_list, voxel_volumes):
 
 
 class MayaviQWidget(QtGui.QWidget):
-    animator = None
-    currentFrame = 0
-    ug = tvtk.UnstructuredGrid()
-    surf = mlab.pipeline.surface(ug, opacity =1)
     
-    colorbar_ug = tvtk.UnstructuredGrid()
-    colorbar_min, colorbar_max = 0,0 
-    colorbar_ug.point_data.scalars = np.linspace(colorbar_min,colorbar_max,7)  
-    colorbar_ug.point_data.scalars.name = 'concentrations'
-    colorBarDummySurf = mlab.pipeline.surface(colorbar_ug, opacity =1, colormap='hot')
-    colorBar = mlab.colorbar(object=colorBarDummySurf, title='Concentration', orientation='vertical', nb_labels=7)
-    colorBar.visible = False
     
     
     #unable to call functions within this space, sending methods to anim.
@@ -118,6 +104,18 @@ class MayaviQWidget(QtGui.QWidget):
         self.ui = self.visualization.edit_traits(parent=self, kind='subpanel').control
         layout.addWidget(self.ui)
         self.ui.setParent(self)
+        self.home()
+    
+    def home(self):
+        self.animator = None
+        self.currentFrame = 0
+        self.colorbar_ug = tvtk.UnstructuredGrid()
+        self.colorbar_min, self.colorbar_max = 0,0 
+        self.colorbar_ug.point_data.scalars = np.linspace(self.colorbar_min, self.colorbar_max,7)  
+        self.colorbar_ug.point_data.scalars.name = 'concentrations'
+        self.colorBarDummySurf = mlab.pipeline.surface(self.colorbar_ug, opacity =1, colormap='hot')
+        self.colorBar = mlab.colorbar(object=self.colorBarDummySurf, title='Concentration', orientation='vertical', nb_labels=7)
+        self.colorBar.visible = False
         
         
     
@@ -194,8 +192,11 @@ def get_h5simData(fileName):
     return simData
     
 def getMorphologyGrid():
-    return simData['model']['grid']    
-
+    return simData['model']['grid']
+    
+def getQtWindow():
+    return container 
+    
 #Searches the list of molecules and returns thes corresponding index. Returns -1 if not found.
 def get_mol_index(simData, outputSet, molecule):
     indices=np.where(simData['model']['output'][outputSet]['species'][:]==molecule)[0]
@@ -233,14 +234,9 @@ def get_mol_info(simData,plot_molecules,grid_points):
             out_location[molecule]={'samples':samples[imol],'dt':dt[imol],'voxels': grid_points,'location': temp_dict}
     return out_location,dt,samples
 
-def make_temp_dict(simData):
-    samples[moleculeType]=len(simData['trial0']['output'][outset]['times'])
-    dt[moleculeType]=simData['trial0']['output'][outset]['times'][1]/1000. #convert msec to sec
-    temp_dict[outset]={'mol_index':mol_index,'elements':simData['model']['output'][outset]['elements'][:]}
-    return temp_dict
-
 if __name__ == "__main__":
     #Don't know precisely what a lot of these initilization lines do, but do need them.
+    
     app = QtGui.QApplication.instance()
     container = QtGui.QWidget()
     layout = QtGui.QGridLayout(container)
@@ -250,24 +246,23 @@ if __name__ == "__main__":
     label.setText("Progress: ms")
     label.setGeometry(100,100, 100, 100)
     label.setAlignment(QtCore.Qt.AlignHCenter|QtCore.Qt.AlignVCenter)
-    
     try:
         fileName=fname
     except NameError:
-        fileName = sys.argv[1]
-
-    fileName = "Model_CamKIInew_pDglUchi5s-dhpg5.h5"
+        try:
+            fileName = sys.argv[1]
+        except:
+            fileName = "Model_CamKIInew_pDglUchi5s-dhpg5.h5"
+        
     simData = get_h5simData(fileName)
-    
     moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
     for moleculeType in range(len(moleculeList)):
         comboBox.addItem(moleculeList[moleculeType])
-    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.  
-     
-    mayavi_widget = MayaviQWidget(container)   
+    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
+    mayavi_widget = MayaviQWidget(container)
     comboBox.activated[str].connect(mayavi_widget.molecule_selected)
     layout.addWidget(mayavi_widget, 1, 1) # This is visualization of morphology
-    #container.show()
+    container.show()
     window = QtGui.QMainWindow()
     window.setCentralWidget(container)
     window.show()
