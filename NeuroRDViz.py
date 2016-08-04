@@ -249,10 +249,8 @@ if __name__ == "__main__":
     try:
         fileName=fname
     except NameError:
-        try:
-            fileName = sys.argv[1]
-        except:
-            fileName = "Model_CamKIInew_pDglUchi5s-dhpg5.h5"
+        fileName = sys.argv[1]
+
         
     simData = get_h5simData(fileName)
     moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
