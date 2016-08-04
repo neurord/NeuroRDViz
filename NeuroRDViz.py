@@ -30,13 +30,12 @@ class Visualization(HasTraits):
     @on_trait_change('scene.activated')
     def update_plot(self):
         ug=create_morphology(simData)
-        surf = mlab.pipeline.surface(ug, opacity=1)
+        surf = self.scene.mlab.pipeline.surface(ug, opacity=1)
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
 
 
     # the layout of the dialog created
-    view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene),
-                     height=250, width=300, show_label=False),
+    view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene), height=250, width=300, show_label=False),
                 resizable=True  
                 )
 
@@ -120,6 +119,7 @@ class MayaviQWidget(QtGui.QWidget):
         layout.addWidget(self.ui)
         self.ui.setParent(self)
         
+        
     
     def molecule_selected(self, text):
         #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
@@ -194,11 +194,8 @@ def get_h5simData(fileName):
     return simData
     
 def getMorphologyGrid():
-    return simData['model']['grid']
-    
-def getQtWindow():
-    return container 
-    
+    return simData['model']['grid']    
+
 #Searches the list of molecules and returns thes corresponding index. Returns -1 if not found.
 def get_mol_index(simData, outputSet, molecule):
     indices=np.where(simData['model']['output'][outputSet]['species'][:]==molecule)[0]
@@ -242,7 +239,6 @@ def make_temp_dict(simData):
     temp_dict[outset]={'mol_index':mol_index,'elements':simData['model']['output'][outset]['elements'][:]}
     return temp_dict
 
- 
 if __name__ == "__main__":
     #Don't know precisely what a lot of these initilization lines do, but do need them.
     app = QtGui.QApplication.instance()
@@ -254,19 +250,24 @@ if __name__ == "__main__":
     label.setText("Progress: ms")
     label.setGeometry(100,100, 100, 100)
     label.setAlignment(QtCore.Qt.AlignHCenter|QtCore.Qt.AlignVCenter)
+    
     try:
         fileName=fname
     except NameError:
         fileName = sys.argv[1]
+
+    fileName = "Model_CamKIInew_pDglUchi5s-dhpg5.h5"
     simData = get_h5simData(fileName)
+    
     moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
     for moleculeType in range(len(moleculeList)):
         comboBox.addItem(moleculeList[moleculeType])
-    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
-    mayavi_widget = MayaviQWidget(container)
+    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.  
+     
+    mayavi_widget = MayaviQWidget(container)   
     comboBox.activated[str].connect(mayavi_widget.molecule_selected)
     layout.addWidget(mayavi_widget, 1, 1) # This is visualization of morphology
-    container.show()
+    #container.show()
     window = QtGui.QMainWindow()
     window.setCentralWidget(container)
     window.show()
