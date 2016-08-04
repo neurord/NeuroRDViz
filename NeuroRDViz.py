@@ -75,18 +75,18 @@ def get_voxel_molecule_conc(simData, moleculeType, out_location):
         voxels = out_location[moleculeType]['location'][currentSet]['elements'] 
         tempSnapshot = simData['trial0']['output'][currentSet]['population'][:,:,molnum] 
         outputSet[:,voxels]=tempSnapshot
-    outputSetConcs = population_list_to_concentration_list(outputSet, simData['model']['grid']['volume'])
+    outputSetConcs = population_to_concentration(outputSet, simData['model']['grid']['volume'])
     return outputSetConcs
 
 
 #Conert molecular population to molecular concentration
-def population_list_to_concentration_list(pop_list, voxel_volumes):
+def population_to_concentration(pop_list, voxel_volumes):
     conc_list = np.zeros(np.shape(pop_list))
     
     #Iterate through one timeframe of pop_list to divide each voxel's population by the ~[grid][voxel volume]
-    for z, pop_list_snapshot in enumerate(pop_list): #
-        for i, (a,b) in enumerate(zip(pop_list_snapshot, voxel_volumes)):
-            conc_list[z][i] = (a/b) * mol_per_nM_u3
+    for z, pop_snapshot in enumerate(pop_list): #
+        for i, (a,b) in enumerate(zip(pop_snapshot, voxel_volumes)):
+            conc_list[z][i] = (a/b) / mol_per_nM_u3
             
     #print out a volumes[3] volumes[6] & conc_list[3] [6] with two types 
     return conc_list
