@@ -40,8 +40,6 @@ class Visualization(HasTraits):
                 resizable=True  
                 )
 
-
-
 def create_morphology(simData):
 
            
@@ -67,7 +65,6 @@ def create_morphology(simData):
 
 
     return ug
-
 
 def get_voxel_molecule_conc(simData, moleculeType, out_location):
     grid_points=len(getMorphologyGrid())
@@ -98,9 +95,17 @@ def population_list_to_concentration_list(pop_list, voxel_volumes):
 class MayaviQWidget(QtGui.QWidget):
     animator = None
     currentFrame = 0
-    f = mlab.gcf()
     ug = tvtk.UnstructuredGrid()
     surf = mlab.pipeline.surface(ug, opacity =1)
+    
+    colorbar_ug = tvtk.UnstructuredGrid()
+    colorbar_min, colorbar_max = 0,0 
+    colorbar_ug.point_data.scalars = np.linspace(colorbar_min,colorbar_max,7)  
+    colorbar_ug.point_data.scalars.name = 'concentrations'
+    colorBarDummySurf = mlab.pipeline.surface(colorbar_ug, opacity =1, colormap='hot')
+    colorBar = mlab.colorbar(object=colorBarDummySurf, title='Concentration', orientation='vertical', nb_labels=7)
+    colorBar.visible = False
+    
     
     #unable to call functions within this space, sending methods to anim.
     def __init__(self, parent=None):
@@ -119,60 +124,66 @@ class MayaviQWidget(QtGui.QWidget):
     def molecule_selected(self, text):
         #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
         #with whatever conditions passed
-        if text != None: 
+        if text != None:
             if self.animator != None:
                 self.animator.close()
-            self.animator = anim(create_morphology(simData), simData, text, self, self.f)
+            self.animator = anim(create_morphology(simData), simData, text, self)
 
     def setCurrentFrame(self, frame):
         self.currentFrame = frame
 
     def getCurrentFrame(self):
         return self.currentFrame
+    
+    def setcolorbar_min(self, min):
+        self.colorbar_min = min
+
+    def getcolorbar_min(self):
+        return self.colorbar_min
+    
+    def setcolorbar_max(self, max):
+        self.colorbar_max = max
+
+    def getcolorbar_max(self):
+        return self.colorbar_max
         
     
+@mlab.animate(delay=10) 
+def anim(ug, simData, moleculeType, windowObject):
 
-@mlab.animate(delay=100) 
-def anim(ug, simData, moleculeType, frameTracker, f):
-
+    #Simulation Data Gathering
     out_location,dt,samples = get_mol_info(simData,simData['model']['output']['__main__']['species'][:],getMorphologyGrid())
     molnum = get_mol_index(simData, "all", moleculeType)
-    iterations = len(simData['trial0']['output']['all']['times'])  #times[1] - times[0] = dt                                         #change! all to chosen outputSets from getSomething
-    currentFrame = frameTracker.getCurrentFrame()
+    iterations = len(simData['trial0']['output']['all']['times'])  #times[1] - times[0] = dt     #change! all to chosen outputSets from getSomething
+    currentFrame = windowObject.getCurrentFrame()
     population = get_voxel_molecule_conc(simData, moleculeType, out_location)
-       
-   
     
+    #Creates mayavi surface to be shown corresponding with the unstructured grid(ug)
     surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
     mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) 
     surf.module_manager.scalar_lut_manager.data_range = [0, np.max(population)]
     
-    
-    lut = surf.module_manager.scalar_lut_manager.lut.table.to_array()
-    
- 
+    #Set Colorbar range for this Molecule Type
+    windowObject.colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [0, np.max(population)]
+    windowObject.colorBar.visible = True
 
-    #Colorbar Unstructured Grid kluge (keeps colorbar from changing each timestep)
-    colorbar_ug = ug
-    colorbar_ug.point_data.scalars = np.linspace(np.min(population),np.max(population),len(ug.get_cells().to_array()))  
-    colorbar_ug.point_data.scalars.name = 'concentratio
-    ns'
-    colorbar_surf = mlab.pipeline.surface(colorbar_ug, opacity =0, colormap='hot')
-    p = mlab.colorbar(object=colorbar_surf, title='Concentration', orientation='vertical', nb_labels=7)
-    p.visible = False
+    #Actual Animation Loop
     while currentFrame < iterations:
         
         concentrations = population[currentFrame,:]
         ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
         ug.point_data.scalars.name = 'concentrations' 
-        print(concentrations)
-        print(surf.module_manager.scalar_lut_manager.data_range)
+        print(currentFrame)
+        
         ug.modified()
         currentFrame += 1
-        #getQtWindow().label.setText(currentFrame+ "ms")
-        #print("Progress:",currentFrame)
-        frameTracker.setCurrentFrame(currentFrame)
+        windowObject.setCurrentFrame(currentFrame)
         yield
+        
+    #If completed, reset to beginning.
+    if windowObject.getCurrentFrame() >= (iterations-1):
+        windowObject.setCurrentFrame(0)
+        currentFrame = windowObject.getCurrentFrame()
 
 
 def getMoleculeList(simData):
@@ -196,18 +207,7 @@ def get_mol_index(simData, outputSet, molecule):
     else:
         return -1
 
-#Returns the largest dataset - should contain all species. (breaking on "TypeError:
-#string indices must be integers. "Picking battles" and going with always picking 
-#__main__ for now.
-'''def get_Master_Set(simData):
-    biggestOutputSet = []
-    for thisOutputSet in simData['model']['output']:
-        print(len(thisOutputSet['species'][:]))
-        print(len(biggestOutputSet))
-        if len(thisOutputSet['species']) > len(biggestOutputSet):
-            biggestOutputSet = thisOutputSet['species'][:]
-    return biggestOutputSet'''
- 
+
 def get_mol_info(simData,plot_molecules,grid_points):
     outputsets=simData['model']['output'].keys()
     dt=np.zeros((len(plot_molecules)))
@@ -244,17 +244,12 @@ def make_temp_dict(simData):
 
  
 if __name__ == "__main__":
-    # Don't create a new QApplication, it would unhook the Events
-
-    # set by Traits on the existing QApplication. Simply use the
-    # '.instance()' method to retrieve the existing one.
+    #Don't know precisely what a lot of these initilization lines do, but do need them.
     app = QtGui.QApplication.instance()
-    '''GUI = Window()'''
     container = QtGui.QWidget()
-    #container.setWindowTitle("NeuoRD Visualization")
-    # define a "complex" layout to test the behaviour
     layout = QtGui.QGridLayout(container)
     comboBox = QtGui.QComboBox(container)
+    #Put Progress label on screen
     label = QtGui.QLabel(container)
     label.setText("Progress: ms")
     label.setGeometry(100,100, 100, 100)
