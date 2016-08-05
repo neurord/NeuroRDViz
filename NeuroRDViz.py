@@ -189,7 +189,7 @@ def anim(ug, simData, moleculeType, widgetObject):
         yield
         
     #If completed, reset to beginning.
-    if widgetObject.getCurrentFrame() >= (iterations-1):
+    if widgetObject.getCurrentFrame() >= (widgetObject.iterations-1):
         widgetObject.setCurrentFrame(0)
 
 
