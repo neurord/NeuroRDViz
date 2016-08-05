@@ -95,14 +95,12 @@ def population_to_concentration(pop_list, voxel_volumes):
 class MayaviQWidget(QtGui.QWidget):
 
     #unable to call functions within this space, sending methods to anim.
-    def __init__(self, parent, progress_bar, progress_slider):
+    def __init__(self, parent, progress_bar, progress_slider, progress_label, progress_slider_label):
         QtGui.QWidget.__init__(self, parent)
         layout = QtGui.QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
         self.visualization = Visualization()
-        self.progress_bar = progress_bar
-        self.progress_slider = progress_slider
         # The edit_traits call will generate the widget to embed.
         self.ui = self.visualization.edit_traits(parent=self, kind='subpanel').control
         layout.addWidget(self.ui)
@@ -119,6 +117,11 @@ class MayaviQWidget(QtGui.QWidget):
         self.colorBarDummySurf = mlab.pipeline.surface(self.colorbar_ug, opacity =1, colormap='hot')
         self.colorBar = mlab.colorbar(object=self.colorBarDummySurf, title='Concentration', orientation='vertical', nb_labels=7)
         self.colorBar.visible = False
+        self.iterations = 0
+        self.progress_bar = progress_bar
+        self.progress_slider = progress_slider
+        self.progress_slider_label = progress_slider_label
+        self.progress_label = progress_label
     
     def molecule_selected(self, text):
         #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
@@ -129,9 +132,10 @@ class MayaviQWidget(QtGui.QWidget):
             self.animator = anim(create_morphology(simData), simData, text, self)
     
     def slider_movement(self):
-        #position = self.progress_slider.value()
-        #self.setCurrentFrame(position)
-        print(self.getCurrentFrame())
+        position = self.progress_slider.value()
+        x = int((position/100)*self.iterations)
+        self.setCurrentFrame(x)
+        self.progress_slider_label.setText(str(x)+ "ms")
 
     def setCurrentFrame(self, frame):
         self.currentFrame = frame
@@ -158,9 +162,9 @@ def anim(ug, simData, moleculeType, widgetObject):
     #Simulation Data Gathering
     out_location,dt,samples = get_mol_info(simData,simData['model']['output']['__main__']['species'][:],getMorphologyGrid())
     molnum = get_mol_index(simData, "all", moleculeType)
-    iterations = len(simData['trial0']['output']['all']['times'])  #times[1] - times[0] = dt     #change! all to chosen outputSets from getSomething
-    currentFrame = widgetObject.getCurrentFrame()
     population = get_voxel_molecule_conc(simData, moleculeType, out_location)
+    widgetObject.iterations = out_location[moleculeType]['samples']
+    dt=out_location[moleculeType]['dt']
     
     #Creates mayavi surface to be shown corresponding with the unstructured grid(ug)
     surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
@@ -172,25 +176,21 @@ def anim(ug, simData, moleculeType, widgetObject):
     widgetObject.colorBar.visible = True
 
     #Actual Animation Loop
-    while widgetObject.getCurrentFrame() < iterations:
-        
+    while widgetObject.getCurrentFrame() < widgetObject.iterations:
         concentrations = population[widgetObject.getCurrentFrame(),:]
         ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
         ug.point_data.scalars.name = 'concentrations' 
         ug.modified()
-        
-        currentFrame += 1
        
-        widgetObject.setCurrentFrame(widgetObject.getCurrentFrame()+1)
-        print(currentFrame)
-        widgetObject.progress_bar.setValue((widgetObject.getCurrentFrame()/iterations)*100)
-        widgetObject.progress_slider.setValue((widgetObject.getCurrentFrame()/iterations)*100)
+        widgetObject.setCurrentFrame(widgetObject.getCurrentFrame()+1)   
+        widgetObject.progress_label.setText(str(widgetObject.getCurrentFrame()) + "ms")
+        widgetObject.progress_bar.setValue((widgetObject.getCurrentFrame()/widgetObject.iterations)*100)
+        #widgetObject.progress_slider.setValue((widgetObject.getCurrentFrame()/iterations)*100)
         yield
         
     #If completed, reset to beginning.
     if widgetObject.getCurrentFrame() >= (iterations-1):
         widgetObject.setCurrentFrame(0)
-        currentFrame = widgetObject.getCurrentFrame()
 
 
 def getMoleculeList(simData):
@@ -247,19 +247,12 @@ if __name__ == "__main__":
     try:
         fileName=fname
     except NameError:
-        try:
-            fileName = sys.argv[1]
-        except:
-            try:
-                fileName = "Model_CamKIInew_pDglUchi5s-dhpg5.h5"
-            except:
-                print("No .h5 simulation file specified.") 
-    
-   
+        fileName = sys.argv[1] 
     
     simData = get_h5simData(fileName)
     
     progress_bar = QtGui.QProgressBar()
+
     progress_slider = QSlider(Qt.Horizontal)
     
     
@@ -267,7 +260,10 @@ if __name__ == "__main__":
     container = QtGui.QWidget()
     layout = QtGui.QGridLayout(container)
     comboBox = QtGui.QComboBox(container)
-    mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider)
+    progress_label = QtGui.QLabel(container)
+    progress_slider_label = QtGui.QLabel(container)
+                                
+    mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
     
     
     moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
@@ -278,14 +274,17 @@ if __name__ == "__main__":
     
     progress_slider.valueChanged.connect(mayavi_widget.slider_movement)
     
-    label = QtGui.QLabel(mayavi_widget)
-    label.setText(fileName)
+    fileNameLabel = QtGui.QLabel(mayavi_widget)
+    fileNameLabel.setText(fileName)
+    
     
     layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
     layout.addWidget(mayavi_widget, 1, 1) # This is visualization of morphology
-    layout.addWidget(label, 0,1)
-    layout.addWidget(progress_slider, 2, 1)
-    layout.addWidget(progress_bar, 3, 1)
+    layout.addWidget(fileNameLabel, 0,1)
+    layout.addWidget(progress_slider, 3, 1)
+    layout.addWidget(progress_bar, 2, 1)
+    layout.addWidget(progress_label, 2,0)
+    layout.addWidget(progress_slider_label,3, 0)  
     container.show()
    
     app.exec_() # Start the main event loop.
