@@ -1,3 +1,5 @@
+#Bradley William English - brad.w.english@gmail.com
+
 from __future__ import print_function, division
 import os
 os.environ['ETS_TOOLKIT'] = 'qt4'
@@ -5,6 +7,8 @@ os.environ['QT_API'] = 'pyqt'
 import sip
 sip.setapi('Qstring',2)
 from pyface.qt import QtGui, QtCore
+from PyQt4.QtCore import  *
+from PyQt4.QtGui import *
 
 from traits.api import HasTraits, Instance, on_trait_change
 from traitsui.api import View, Item
@@ -89,17 +93,16 @@ def population_to_concentration(pop_list, voxel_volumes):
 
 
 class MayaviQWidget(QtGui.QWidget):
-    
-    
-    
+
     #unable to call functions within this space, sending methods to anim.
-    def __init__(self, parent=None):
+    def __init__(self, parent, progress_bar, progress_slider):
         QtGui.QWidget.__init__(self, parent)
         layout = QtGui.QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
         self.visualization = Visualization()
-
+        self.progress_bar = progress_bar
+        self.progress_slider = progress_slider
         # The edit_traits call will generate the widget to embed.
         self.ui = self.visualization.edit_traits(parent=self, kind='subpanel').control
         layout.addWidget(self.ui)
@@ -116,8 +119,6 @@ class MayaviQWidget(QtGui.QWidget):
         self.colorBarDummySurf = mlab.pipeline.surface(self.colorbar_ug, opacity =1, colormap='hot')
         self.colorBar = mlab.colorbar(object=self.colorBarDummySurf, title='Concentration', orientation='vertical', nb_labels=7)
         self.colorBar.visible = False
-        
-        
     
     def molecule_selected(self, text):
         #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
@@ -126,6 +127,11 @@ class MayaviQWidget(QtGui.QWidget):
             if self.animator != None:
                 self.animator.close()
             self.animator = anim(create_morphology(simData), simData, text, self)
+    
+    def slider_movement(self):
+        #position = self.progress_slider.value()
+        #self.setCurrentFrame(position)
+        print(self.getCurrentFrame())
 
     def setCurrentFrame(self, frame):
         self.currentFrame = frame
@@ -144,16 +150,16 @@ class MayaviQWidget(QtGui.QWidget):
 
     def getcolorbar_max(self):
         return self.colorbar_max
-        
+
     
 @mlab.animate(delay=10) 
-def anim(ug, simData, moleculeType, windowObject):
+def anim(ug, simData, moleculeType, widgetObject):
 
     #Simulation Data Gathering
     out_location,dt,samples = get_mol_info(simData,simData['model']['output']['__main__']['species'][:],getMorphologyGrid())
     molnum = get_mol_index(simData, "all", moleculeType)
     iterations = len(simData['trial0']['output']['all']['times'])  #times[1] - times[0] = dt     #change! all to chosen outputSets from getSomething
-    currentFrame = windowObject.getCurrentFrame()
+    currentFrame = widgetObject.getCurrentFrame()
     population = get_voxel_molecule_conc(simData, moleculeType, out_location)
     
     #Creates mayavi surface to be shown corresponding with the unstructured grid(ug)
@@ -162,26 +168,29 @@ def anim(ug, simData, moleculeType, windowObject):
     surf.module_manager.scalar_lut_manager.data_range = [0, np.max(population)]
     
     #Set Colorbar range for this Molecule Type
-    windowObject.colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [0, np.max(population)]
-    windowObject.colorBar.visible = True
+    widgetObject.colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [0, np.max(population)]
+    widgetObject.colorBar.visible = True
 
     #Actual Animation Loop
-    while currentFrame < iterations:
+    while widgetObject.getCurrentFrame() < iterations:
         
-        concentrations = population[currentFrame,:]
+        concentrations = population[widgetObject.getCurrentFrame(),:]
         ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
         ug.point_data.scalars.name = 'concentrations' 
-        print(currentFrame)
-        
         ug.modified()
+        
         currentFrame += 1
-        windowObject.setCurrentFrame(currentFrame)
+       
+        widgetObject.setCurrentFrame(widgetObject.getCurrentFrame()+1)
+        print(currentFrame)
+        widgetObject.progress_bar.setValue((widgetObject.getCurrentFrame()/iterations)*100)
+        widgetObject.progress_slider.setValue((widgetObject.getCurrentFrame()/iterations)*100)
         yield
         
     #If completed, reset to beginning.
-    if windowObject.getCurrentFrame() >= (iterations-1):
-        windowObject.setCurrentFrame(0)
-        currentFrame = windowObject.getCurrentFrame()
+    if widgetObject.getCurrentFrame() >= (iterations-1):
+        widgetObject.setCurrentFrame(0)
+        currentFrame = widgetObject.getCurrentFrame()
 
 
 def getMoleculeList(simData):
@@ -204,7 +213,6 @@ def get_mol_index(simData, outputSet, molecule):
         return indices[0]
     else:
         return -1
-
 
 def get_mol_info(simData,plot_molecules,grid_points):
     outputsets=simData['model']['output'].keys()
@@ -235,33 +243,49 @@ def get_mol_info(simData,plot_molecules,grid_points):
     return out_location,dt,samples
 
 if __name__ == "__main__":
-    #Don't know precisely what a lot of these initilization lines do, but do need them.
+    
+    try:
+        fileName=fname
+    except NameError:
+        try:
+            fileName = sys.argv[1]
+        except:
+            try:
+                fileName = "Model_CamKIInew_pDglUchi5s-dhpg5.h5"
+            except:
+                print("No .h5 simulation file specified.") 
+    
+   
+    
+    simData = get_h5simData(fileName)
+    
+    progress_bar = QtGui.QProgressBar()
+    progress_slider = QSlider(Qt.Horizontal)
+    
     
     app = QtGui.QApplication.instance()
     container = QtGui.QWidget()
     layout = QtGui.QGridLayout(container)
     comboBox = QtGui.QComboBox(container)
-    #Put Progress label on screen
-    label = QtGui.QLabel(container)
-    label.setText("Progress: ms")
-    label.setGeometry(100,100, 100, 100)
-    label.setAlignment(QtCore.Qt.AlignHCenter|QtCore.Qt.AlignVCenter)
-    try:
-        fileName=fname
-    except NameError:
-        fileName = sys.argv[1]
-
-        
-    simData = get_h5simData(fileName)
+    mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider)
+    
+    
     moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
     for moleculeType in range(len(moleculeList)):
         comboBox.addItem(moleculeList[moleculeType])
-    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
-    mayavi_widget = MayaviQWidget(container)
+    
     comboBox.activated[str].connect(mayavi_widget.molecule_selected)
+    
+    progress_slider.valueChanged.connect(mayavi_widget.slider_movement)
+    
+    label = QtGui.QLabel(mayavi_widget)
+    label.setText(fileName)
+    
+    layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
     layout.addWidget(mayavi_widget, 1, 1) # This is visualization of morphology
+    layout.addWidget(label, 0,1)
+    layout.addWidget(progress_slider, 2, 1)
+    layout.addWidget(progress_bar, 3, 1)
     container.show()
-    window = QtGui.QMainWindow()
-    window.setCentralWidget(container)
-    window.show()
+   
     app.exec_() # Start the main event loop.
