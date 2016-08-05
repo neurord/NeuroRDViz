@@ -1,4 +1,4 @@
-#Bradley William English - brad.w.english@gmail.com
+#Developed by Bradley William English - brad.w.english@gmail.com
 
 from __future__ import print_function, division
 import os
