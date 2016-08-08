@@ -24,6 +24,52 @@ import sys
 Avogadro=6.023e14
 mol_per_nM_u3=Avogadro*1e-15
 
+class ExtendedCombo( QComboBox ):
+    def __init__( self,  parent = None):
+        super( ExtendedCombo, self ).__init__( parent )
+
+        self.setFocusPolicy( Qt.StrongFocus )
+        self.setEditable( True )
+        self.completer = QCompleter( self )
+
+        # always show all completions
+        self.completer.setCompletionMode( QCompleter.UnfilteredPopupCompletion )
+        self.pFilterModel = QSortFilterProxyModel( self )
+        self.pFilterModel.setFilterCaseSensitivity( Qt.CaseInsensitive )
+
+
+
+        self.completer.setPopup( self.view() )
+
+
+        self.setCompleter( self.completer )
+
+
+        self.lineEdit().textEdited[unicode].connect( self.pFilterModel.setFilterFixedString )
+        self.completer.activated.connect(self.setTextIfCompleterIsClicked)
+
+    def setModel( self, model ):
+        super(ExtendedCombo, self).setModel( model )
+        self.pFilterModel.setSourceModel( model )
+        self.completer.setModel(self.pFilterModel)
+
+    def setModelColumn( self, column ):
+        self.completer.setCompletionColumn( column )
+        self.pFilterModel.setFilterKeyColumn( column )
+        super(ExtendedCombo, self).setModelColumn( column )
+
+
+    def view( self ):
+        return self.completer.popup()
+
+    def index( self ):
+        return self.currentIndex()
+
+    def setTextIfCompleterIsClicked(self, text):
+      if text:
+        index = self.findText(text)
+        self.setCurrentIndex(index)
+        
 class Visualization(HasTraits):
     scene = Instance(MlabSceneModel, ())
 
@@ -259,7 +305,7 @@ if __name__ == "__main__":
     app = QtGui.QApplication.instance()
     container = QtGui.QWidget()
     layout = QtGui.QGridLayout(container)
-    comboBox = QtGui.QComboBox(container)
+    model = QStandardItemModel() #Required for searchable comboBox
     progress_label = QtGui.QLabel(container)
     progress_slider_label = QtGui.QLabel(container)
                                 
@@ -267,9 +313,13 @@ if __name__ == "__main__":
     
     
     moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
-    for moleculeType in range(len(moleculeList)):
-        comboBox.addItem(moleculeList[moleculeType])
+    for i,moleculeType in enumerate(moleculeList):
+        item = QStandardItem(moleculeType)
+        model.setItem(i, 0, item)
     
+    comboBox = ExtendedCombo()
+    comboBox.setModel(model)
+    comboBox.setModelColumn(0)
     comboBox.activated[str].connect(mayavi_widget.molecule_selected)
     
     progress_slider.valueChanged.connect(mayavi_widget.slider_movement)
