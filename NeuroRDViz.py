@@ -30,7 +30,7 @@ class ExtendedCombo( QComboBox ):
 
         self.setFocusPolicy( Qt.StrongFocus )
         self.setEditable( True )
-        self.completer = QCompleter( self )
+        self.completer = QCompleter(self)
 
         # always show all completions
         self.completer.setCompletionMode( QCompleter.UnfilteredPopupCompletion )
