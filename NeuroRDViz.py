@@ -77,7 +77,7 @@ class Visualization(HasTraits):
     def update_plot(self):
         ug=create_morphology(simData)
         surf = mlab.pipeline.surface(ug, opacity=1)
-        self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))
+        self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
 
 
     # the layout of the dialog created
@@ -105,8 +105,8 @@ def create_morphology(simData):
 
     voxels = np.arange(points.shape[0]).reshape(-1, 8)
 
-    voxel_type = tvtk.Hexahedron().cell_type # VTK_HEXAHEDRON == 12
-    ug = tvtk.UnstructuredGrid(points=points) 
+    voxel_type = tvtk.Hexahedron().cell_type # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
+    ug = tvtk.UnstructuredGrid(points=points) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
     ug.set_cells(voxel_type, voxels)
 
 
@@ -156,7 +156,7 @@ class MayaviQWidget(QtGui.QWidget):
     def home(self):
         self.animator = None
         self.currentFrame = 0
-        self.colorbar_ug = tvtk.UnstructuredGrid()
+        self.colorbar_ug = tvtk.UnstructuredGrid() # @UndefinedVariable
         self.colorbar_min, self.colorbar_max = 0,0 
         self.colorbar_ug.point_data.scalars = np.linspace(self.colorbar_min, self.colorbar_max,7)  
         self.colorbar_ug.point_data.scalars.name = 'concentrations'
@@ -206,7 +206,8 @@ class MayaviQWidget(QtGui.QWidget):
 def anim(ug, simData, moleculeType, widgetObject):
 
     #Simulation Data Gathering
-    out_location,dt,samples = get_mol_info(simData,simData['model']['output']['__main__']['species'][:],getMorphologyGrid())
+    out_location,dt,samples = get_mol_info(simData,simData
+                                           ['model']['output']['__main__']['species'][:],getMorphologyGrid())
     molnum = get_mol_index(simData, "all", moleculeType)
     population = get_voxel_molecule_conc(simData, moleculeType, out_location)
     widgetObject.iterations = out_location[moleculeType]['samples']
@@ -214,7 +215,7 @@ def anim(ug, simData, moleculeType, widgetObject):
     
     #Creates mayavi surface to be shown corresponding with the unstructured grid(ug)
     surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
-    mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) 
+    mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))# @UndefinedVariable
     surf.module_manager.scalar_lut_manager.data_range = [0, np.max(population)]
     
     #Set Colorbar range for this Molecule Type
@@ -261,15 +262,14 @@ def get_mol_index(simData, outputSet, molecule):
         return -1
 
 def get_mol_info(simData,plot_molecules,grid_points):
-    outputsets=simData['model']['output'].keys()
+    outputsets=simData['model']['output'].keys() #Gathers list of outputsets
     dt=np.zeros((len(plot_molecules)))
     samples=np.zeros((len(plot_molecules)),dtype=int)
     out_location={}
     for imol,molecule in enumerate(plot_molecules):
         temp_dict={}
         tot_voxels=0
-        for outset in outputsets[1:]:           #better to go backward from last set, and then go to 0 set if mol not found
-        #for each in outputsets[-1::-1]:
+        for outset in outputsets[1:]: #better to go backward from last set, and then go to 0 set if mol not found
             mol_index=get_mol_index(simData,outset, molecule)
             if mol_index>-1:
                 samples[imol]=len(simData['trial0']['output'][outset]['times'])
@@ -291,7 +291,7 @@ def get_mol_info(simData,plot_molecules,grid_points):
 if __name__ == "__main__":
     
     try:
-        fileName=fname
+        fileName=fname # @UndefinedVariable
     except NameError:
         fileName = sys.argv[1] 
     
