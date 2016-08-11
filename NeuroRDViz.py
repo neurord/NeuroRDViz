@@ -14,11 +14,9 @@ from traits.api import HasTraits, Instance, on_trait_change
 from traitsui.api import View, Item
 from mayavi.core.ui.api import MayaviScene, MlabSceneModel, \
         SceneEditor
-
 import numpy as np
 from tvtk.api import tvtk
 from mayavi import mlab     ######## This line of code takes MUCH longer than anything else (be more selective in imports to expedite?)
-
 import h5py as h5
 import sys
 Avogadro=6.023e14
@@ -66,9 +64,9 @@ class ExtendedCombo( QComboBox ):
         return self.currentIndex()
 
     def setTextIfCompleterIsClicked(self, text):
-      if text:
-        index = self.findText(text)
-        self.setCurrentIndex(index)
+        if text:
+            index = self.findText(text)
+            self.setCurrentIndex(index)
         
 class Visualization(HasTraits):
     scene = Instance(MlabSceneModel, ())
@@ -137,11 +135,103 @@ def population_to_concentration(pop_list, voxel_volumes):
     #print out a volumes[3] volumes[6] & conc_list[3] [6] with two types 
     return conc_list
 
+class setWindow(QtGui.QMainWindow):
 
+    def __init__(self):
+        super(setWindow, self).__init__()
+        self.setGeometry(50, 50, 300, 150)
+        self.setWindowTitle("Set Menu")
+        self.statusBar()
+        
+        minLabel = QtGui.QLabel(self)
+        minLabel.setText("Min:")
+        minLabel.setGeometry(21,20,50,30) #May be simplified with ".move"s
+        
+        minEdit = QtGui.QTextEdit(self)
+        minEdit.setText("Dummy4CurrentMin")
+        minEdit.setGeometry(60,20,200,30)
+        
+        maxLabel = QtGui.QLabel(self)
+        maxLabel.setText("Max:")
+        maxLabel.setGeometry(20,60,50,30)
+
+        maxEdit = QtGui.QTextEdit(self)
+        maxEdit.setText("Dummy4CurrentMax")
+        maxEdit.setGeometry(60,60,200,30)
+
+        self.home()
+        
+    def home(self):
+        btn = QtGui.QPushButton("Apply", self)
+        #Enter Code to read new Min/Max here.
+        container.setcolorbar_min(float(self.minEdit))
+        btn.clicked.connect(self.close_application)
+        btn.resize(btn.minimumSizeHint())#btn.resize(100,100) # May want to use .sizeHint() or minimumSizeHint() on all buttons. 
+        btn.move(240,120)
+        
+        self.show()
+        
+    def close_application(self):
+        self.close()
+    
+class Window(QtGui.QMainWindow):
+    
+    #Main Menus should go here... things which need to appear regardless
+    def __init__(self):
+        super(Window, self).__init__()
+        self.setGeometry(50, 50, 500, 300)
+        self.setWindowTitle("NeuoRD Visualizer")
+        
+        extractAction = QtGui.QAction("&Exit -", self)
+        extractAction.setShortcut("Ctrl+Q")
+        extractAction.setStatusTip('Close Application')
+        extractAction.triggered.connect(self.close_application) #.triggered = .clicked
+        
+        minMaxColorBarAction = QtGui.QAction("&Min/Max Range for Colorbar -", self)
+        minMaxColorBarAction.setShortcut("Ctrl+M")
+        minMaxColorBarAction.setStatusTip('Change the displayed minimum & maximum ranges on the color bar.')
+        minMaxColorBarAction.triggered.connect(self.changeMinMaxColorBar)
+        
+        self.statusBar()
+        
+        mainMenu = self.menuBar()
+        fileMenu = mainMenu.addMenu('&File')
+        fileMenu.addAction(extractAction)
+        SetMenu = mainMenu.addMenu('&Set')
+        SetMenu.addAction(minMaxColorBarAction)
+        
+        self.home()
+        
+    def home(self):
+        btn = QtGui.QPushButton("PlaceHolder", self)        
+        btn.clicked.connect(self.close_application)
+        btn.resize(btn.minimumSizeHint())#btn.resize(100,100) # May want to use .sizeHint() or minimumSizeHint() on all buttons. 
+        btn.move(50,50)
+        
+        toolBarColorBarMinMax = QtGui.QAction(QtGui.QIcon('colorBarIcon.png'), "Set Min/Max of ColorBar", self)
+        toolBarColorBarMinMax.setStatusTip('Change the default min/max range on the color bar.')
+        toolBarColorBarMinMax.triggered.connect(self.changeMinMaxColorBar) #DOESN'T SAVE - CLOSES!!!
+        
+        self.toolBar = self.addToolBar("ToolBar")
+        self.toolBar.addAction(toolBarColorBarMinMax)
+        #print(self.style().objectName())
+
+        self.show()
+
+    def close_application(self):
+        choice = QtGui.QMessageBox.question(self, 'Exit', "Are you sure?", "Yes", "No")
+        if choice == 0:
+            sys.exit()
+    
+    def changeMinMaxColorBar(self):
+        self.newSetWindow = setWindow()
+        self.newSetWindow.show()
+        
 class MayaviQWidget(QtGui.QWidget):
-
     #unable to call functions within this space, sending methods to anim.
-    def __init__(self, parent, progress_bar, progress_slider, progress_label, progress_slider_label):
+    def __init__(self, parent, progress_bar, progress_slider, 
+                 progress_label, progress_slider_label):
+        
         QtGui.QWidget.__init__(self, parent)
         layout = QtGui.QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
@@ -181,7 +271,7 @@ class MayaviQWidget(QtGui.QWidget):
         position = self.progress_slider.value()
         x = int((position/100)*self.iterations)
         self.setCurrentFrame(x)
-        self.progress_slider_label.setText(str(x)+ "ms")
+        self.progress_slider_label.setText(str(x/1000)+ "s")
 
     def setCurrentFrame(self, frame):
         self.currentFrame = frame
@@ -212,7 +302,6 @@ def anim(ug, simData, moleculeType, widgetObject):
     population = get_voxel_molecule_conc(simData, moleculeType, out_location)
     widgetObject.iterations = out_location[moleculeType]['samples']
     dt=out_location[moleculeType]['dt']
-    
     #Creates mayavi surface to be shown corresponding with the unstructured grid(ug)
     surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
     mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0))# @UndefinedVariable
@@ -230,7 +319,7 @@ def anim(ug, simData, moleculeType, widgetObject):
         ug.modified()
        
         widgetObject.setCurrentFrame(widgetObject.getCurrentFrame()+1)   
-        widgetObject.progress_label.setText(str(widgetObject.getCurrentFrame()) + "ms")
+        widgetObject.progress_label.setText(str(widgetObject.getCurrentFrame()/1000) + "s")
         widgetObject.progress_bar.setValue((widgetObject.getCurrentFrame()/widgetObject.iterations)*100)
         #widgetObject.progress_slider.setValue((widgetObject.getCurrentFrame()/iterations)*100)
         yield
@@ -309,7 +398,8 @@ if __name__ == "__main__":
     progress_label = QtGui.QLabel(container)
     progress_slider_label = QtGui.QLabel(container)
                                 
-    mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
+    mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider, 
+                                  progress_label, progress_slider_label)
     
     
     moleculeList = getMoleculeList(simData) #simdata.... then past just the list below
@@ -327,14 +417,19 @@ if __name__ == "__main__":
     fileNameLabel = QtGui.QLabel(mayavi_widget)
     fileNameLabel.setText(fileName)
     
-    
     layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
-    layout.addWidget(mayavi_widget, 1, 1) # This is visualization of morphology
     layout.addWidget(fileNameLabel, 0,1)
-    layout.addWidget(progress_slider, 3, 1)
-    layout.addWidget(progress_bar, 2, 1)
+    layout.addWidget(mayavi_widget, 4, 1) # This is visualization of morphology
     layout.addWidget(progress_label, 2,0)
+    layout.addWidget(progress_bar, 2, 1)
     layout.addWidget(progress_slider_label,3, 0)  
+    layout.addWidget(progress_slider, 3, 1)
+    
+
     container.show()
+   
+    window = Window()
+    window.setCentralWidget(container)
+    window.show()
    
     app.exec_() # Start the main event loop.
