@@ -22,6 +22,7 @@ import sys
 Avogadro=6.023e14
 mol_per_nM_u3=Avogadro*1e-15
 
+#Combobox that allows for search/autocompletion
 class ExtendedCombo( QComboBox ):
     def __init__( self,  parent = None):
         super( ExtendedCombo, self ).__init__( parent )
@@ -34,14 +35,9 @@ class ExtendedCombo( QComboBox ):
         self.completer.setCompletionMode( QCompleter.UnfilteredPopupCompletion )
         self.pFilterModel = QSortFilterProxyModel( self )
         self.pFilterModel.setFilterCaseSensitivity( Qt.CaseInsensitive )
-
-
-
         self.completer.setPopup( self.view() )
 
-
         self.setCompleter( self.completer )
-
 
         self.lineEdit().textEdited[unicode].connect( self.pFilterModel.setFilterFixedString )
         self.completer.activated.connect(self.setTextIfCompleterIsClicked)
@@ -172,7 +168,7 @@ class colorBarInputDialog(QWidget):
         self.setWindowTitle("Colorbar Options")
         
     def getItem(self): 
-        items = ("Linear", "Logarithmic (under development)")
+        items = ("Linear", "Logarithmic (coming soon!)")
         item, ok = QInputDialog.getItem(self, "select input dialog", "List of Schemes", items, 0, False)
         if ok and item:
             self.leScale.setText(item)
@@ -239,8 +235,8 @@ class Window(QtGui.QMainWindow):
         mainMenu = self.menuBar()
         fileMenu = mainMenu.addMenu('&File')
         fileMenu.addAction(extractAction)
-        SetMenu = mainMenu.addMenu('&Set')
-        SetMenu.addAction(minMaxColorBarAction)
+        ModifyMenu = mainMenu.addMenu('&Modify')
+        ModifyMenu.addAction(minMaxColorBarAction)
         
         self.home()
         
@@ -444,7 +440,12 @@ if __name__ == "__main__":
                                 
     mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider, 
                                   progress_label, progress_slider_label)
-    
+    mayavi_widget2 = MayaviQWidget(container, progress_bar, progress_slider, 
+                                  progress_label, progress_slider_label)
+    mayavi_widget3 = MayaviQWidget(container, progress_bar, progress_slider, 
+                                  progress_label, progress_slider_label)
+    mayavi_widget4 = MayaviQWidget(container, progress_bar, progress_slider, 
+                                  progress_label, progress_slider_label)
     
     moleculeList = sorted(getMoleculeList(simData)) #simdata.... then past just the list below
     for i,moleculeType in enumerate(moleculeList):
@@ -464,6 +465,9 @@ if __name__ == "__main__":
     layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
     layout.addWidget(fileNameLabel, 0,1)
     layout.addWidget(mayavi_widget, 4, 1) # This is visualization of morphology
+    layout.addWidget(mayavi_widget2, 4, 2)
+    layout.addWidget(mayavi_widget3, 5, 1)
+    layout.addWidget(mayavi_widget4, 5, 2)
     layout.addWidget(progress_label, 2,0)
     layout.addWidget(progress_bar, 2, 1)
     layout.addWidget(progress_slider_label,3, 0)  
