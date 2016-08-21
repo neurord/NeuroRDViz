@@ -168,8 +168,8 @@ class colorBarInputDialog(QWidget):
         self.setWindowTitle("Colorbar Options")
         
     def getItem(self): 
-        items = ("Linear", "Logarithmic (coming soon!)")
-        item, ok = QInputDialog.getItem(self, "select input dialog", "List of Schemes", items, 0, False)
+        items = ("Linear", "Logarithmic (Note: Min cannot be 0!)")
+        item, ok = QInputDialog.getItem(self, "select input dialog", "Select Scale:", items, 0, False)
         if ok and item:
             self.leScale.setText(item)
             
@@ -179,12 +179,12 @@ class colorBarInputDialog(QWidget):
             self.le1.setText(str(text))
             
     def getMin(self):
-        num,ok = QInputDialog.getInt(self,"integer input dualog","enter a number")
+        num,ok = QInputDialog.getText(self,"Double Input Dialog","Enter Min")
         if ok:
             self.minLabel.setText(str(num))
             
     def getMax(self):
-        num,ok = QInputDialog.getInt(self,"integer input dualog","enter a number")
+        num,ok = QInputDialog.getText(self,"Double Input Dialog","Enter Max")
         if ok:
             self.maxLabel.setText(str(num))
     def restoreDefaults(self):
@@ -202,8 +202,16 @@ class colorBarInputDialog(QWidget):
     def applyChanges(self):
         try:    
             newMin, newMax = float(self.minLabel.text()), float(self.maxLabel.text()) 
-            mayavi_widget.colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [newMin, newMax]
+            mayavi_widget.colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [newMin, newMax]            
             mayavi_widget.surf.module_manager.scalar_lut_manager.data_range = [newMin, newMax]
+            lut = mayavi_widget.surf.module_manager.scalar_lut_manager.lut
+            cbarlut = mayavi_widget.colorBarDummySurf.module_manager.scalar_lut_manager.lut
+            if self.leScale.text() == "Logarithmic (Note: Min cannot be 0!)":
+                lut.scale = 'log10'
+                cbarlut.scale = 'log10'
+            elif self.leScale.text() == "Linear":
+                lut.scale = 'linear'
+                cbarlut.scale = 'linear'
         except:
             self.msg = QMessageBox()
             self.msg.setIcon(QMessageBox.Information)
@@ -252,6 +260,10 @@ class Window(QtGui.QMainWindow):
         self.show()
 
     def close_application(self):
+        #print("Brad: Put are you sure? back in")
+        #Remove following line:
+        #sys.exit()
+        #Add back in lines below:
         choice = QtGui.QMessageBox.question(self, 'Exit', "Are you sure?", "Yes", "No")
         if choice == 0:
             sys.exit()
@@ -261,7 +273,7 @@ class Window(QtGui.QMainWindow):
         self.newSetWindow.show()
         
 class MayaviQWidget(QtGui.QWidget):
-    #unable to call functions within this space, sending methods to anim.
+    #unable to call functions within this space, sending methods to anim
     def __init__(self, parent, progress_bar, progress_slider, 
                  progress_label, progress_slider_label):
         
@@ -284,8 +296,7 @@ class MayaviQWidget(QtGui.QWidget):
         self.colorbar_ug.point_data.scalars = np.linspace(self.colorbar_min, self.colorbar_max,7)  
         self.colorbar_ug.point_data.scalars.name = 'concentrations'
         self.colorBarDummySurf = mlab.pipeline.surface(self.colorbar_ug, opacity =0.8, colormap='hot')
-        self.colorBar = mlab.colorbar(object=self.colorBarDummySurf, title='Concentration', orientation='vertical', nb_labels=7)
-        self.colorBar.visible = False
+        self.colorBar = mlab.colorbar(object=self.colorBarDummySurf, title='Concentration', orientation='vertical')
         self.iterations = 0
         self.surf = None
         self.progress_bar = progress_bar
@@ -345,7 +356,6 @@ def anim(ug, simData, moleculeType, widgetObject):
     
     #Set Colorbar range for this Molecule Type
     widgetObject.colorbar_min, widgetObject.colorbar_max = 0, np.max(widgetObject.population)
-    widgetObject.colorBar.visible = True
     widgetObject.colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [widgetObject.colorbar_min, widgetObject.colorbar_max]
     
     #Actual Animation Loop
@@ -438,14 +448,18 @@ if __name__ == "__main__":
     progress_label = QtGui.QLabel(container)
     progress_slider_label = QtGui.QLabel(container)
                                 
-    mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider, 
-                                  progress_label, progress_slider_label)
-    mayavi_widget2 = MayaviQWidget(container, progress_bar, progress_slider, 
-                                  progress_label, progress_slider_label)
-    mayavi_widget3 = MayaviQWidget(container, progress_bar, progress_slider, 
-                                  progress_label, progress_slider_label)
-    mayavi_widget4 = MayaviQWidget(container, progress_bar, progress_slider, 
-                                  progress_label, progress_slider_label)
+    mayavi_widget = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
+    #When prepared to add additional moleculeTypes shown, move these lines to relavent location:
+    '''
+    mayavi_widget2 = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
+    mayavi_widget3 = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
+    mayavi_widget4 = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
+    
+    #These go somewhere after layout is created:
+    layout.addWidget(mayavi_widget2, 4, 2)
+    layout.addWidget(mayavi_widget3, 5, 1)
+    layout.addWidget(mayavi_widget4, 5, 2)
+    '''
     
     moleculeList = sorted(getMoleculeList(simData)) #simdata.... then past just the list below
     for i,moleculeType in enumerate(moleculeList):
@@ -465,9 +479,6 @@ if __name__ == "__main__":
     layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
     layout.addWidget(fileNameLabel, 0,1)
     layout.addWidget(mayavi_widget, 4, 1) # This is visualization of morphology
-    layout.addWidget(mayavi_widget2, 4, 2)
-    layout.addWidget(mayavi_widget3, 5, 1)
-    layout.addWidget(mayavi_widget4, 5, 2)
     layout.addWidget(progress_label, 2,0)
     layout.addWidget(progress_bar, 2, 1)
     layout.addWidget(progress_slider_label,3, 0)  
