@@ -72,7 +72,7 @@ class Visualization(HasTraits):
         ug=create_morphology(simData)
         surf = mlab.pipeline.surface(ug, opacity=1)
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
-
+        mlab.axes()
 
     # the layout of the dialog created
     view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene),
@@ -81,28 +81,18 @@ class Visualization(HasTraits):
                 )
 
 def create_morphology(simData):
-
            
     grid = np.array(getMorphologyGrid()).view(np.recarray)                          
-    xmin = np.min((grid.x0, grid.x1, grid.x2, grid.x3), axis=0)
-    ymin = np.min((grid.y0, grid.y1, grid.y2, grid.y3), axis=0)
-    zmin = np.min((grid.z0, grid.z1, grid.z2, grid.z3), axis=0)
-    xmax = np.max((grid.x0, grid.x1, grid.x2, grid.x3), axis=0)
-    ymax = np.max((grid.y0, grid.y1, grid.y2, grid.y3), axis=0)
-    zmax = np.max((grid.z0, grid.z1, grid.z2, grid.z3), axis=0)
-
     points = np.array((
-         (xmin, ymin, zmin), (xmax, ymin, zmin), (xmax, ymax, zmin), (xmin, ymax, zmin),
-         (xmin, ymin, zmax), (xmax, ymin, zmax), (xmax, ymax, zmax), (xmin, ymax, zmax)))
+         (grid.x0, grid.y0, grid.z0), (grid.x1, grid.y1, grid.z1), (grid.x2, grid.y2, grid.z2), (grid.x3, grid.y3, grid.z3-grid.deltaZ),
+         (grid.x0, grid.y0, grid.z0+grid.deltaZ), (grid.x1, grid.y1, grid.z1+grid.deltaZ), (grid.x2, grid.y2, grid.z2+grid.deltaZ), (grid.x3, grid.y3, grid.z3),))
     points = points.swapaxes(0, 2).swapaxes(1, 2)
     points = points.reshape(-1, 3)
-
     voxels = np.arange(points.shape[0]).reshape(-1, 8)
 
     voxel_type = tvtk.Hexahedron().cell_type # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
     ug = tvtk.UnstructuredGrid(points=points) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
     ug.set_cells(voxel_type, voxels)
-
 
     return ug
 
@@ -304,6 +294,7 @@ class MayaviQWidget(QtGui.QWidget):
         self.progress_slider_label = progress_slider_label
         self.progress_label = progress_label
         self.population = 0
+        
     
     def molecule_selected(self, text):
         #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
@@ -357,7 +348,6 @@ def anim(ug, simData, moleculeType, widgetObject):
     #Set Colorbar range for this Molecule Type
     widgetObject.colorbar_min, widgetObject.colorbar_max = 0, np.max(widgetObject.population)
     widgetObject.colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [widgetObject.colorbar_min, widgetObject.colorbar_max]
-    
     #Actual Animation Loop
     while widgetObject.getCurrentFrame() < widgetObject.iterations:
         #Setting colorbar min/max dynamically allows for it to be changed mid-animatino
@@ -490,5 +480,4 @@ if __name__ == "__main__":
     window = Window()
     window.setCentralWidget(container)
     window.show()
-   
     app.exec_() # Start the main event loop.
