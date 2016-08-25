@@ -234,6 +234,8 @@ class Window(QtGui.QMainWindow):
         self.setGeometry(50, 50, 1100, 800)
         self.setWindowTitle("NeuoRD Visualizer")
         
+        self.animator = None
+        
         exitAction = QtGui.QAction("&Exit -", self)
         exitAction.setShortcut("Ctrl+Q")
         exitAction.setStatusTip('Close Application')
@@ -308,17 +310,45 @@ class Window(QtGui.QMainWindow):
         self.newHelpWindow.show()
     
     def add_model(self): 
-        mayavi_widget_list.append(MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label))
+        progress_bar_list.append(QtGui.QProgressBar())
+        progress_slider_list.append(QSlider(Qt.Horizontal))
+        reset_button_list.append(QtGui.QPushButton('Reset', window))
+        mayavi_widget_list.append(MayaviQWidget(container, progress_bar_list[self.modelCount] \
+        , progress_slider_list[self.modelCount], progress_label, progress_slider_label))
+        
+        progress_slider_list[self.modelCount].valueChanged.connect(self.slider_movement)  
+        reset_button_list[self.modelCount].clicked.connect(window.resetAnimation)
+         
         if self.modelCount % 2 != 0:
-            layout.addWidget(mayavi_widget_list[self.modelCount], self.currentRow, self.currentColumn+1)
-            self.currentRow += 1
+            layout.addWidget(progress_bar_list[self.modelCount], self.currentRow-2, self.currentColumn+1)
+            layout.addWidget(progress_slider_list[self.modelCount], self.currentRow-1, self.currentColumn+1)
+            layout.addWidget(mayavi_widget_list[self.modelCount], self.currentRow, self.currentColumn+1)  
+            layout.addWidget(reset_button_list[self.modelCount], self.currentRow+1, self.currentColumn+1)                     
+            self.currentRow += 4
         else:
+            layout.addWidget(progress_bar_list[self.modelCount], self.currentRow-2, self.currentColumn)
+            layout.addWidget(progress_slider_list[self.modelCount], self.currentRow-1, self.currentColumn)
             layout.addWidget(mayavi_widget_list[self.modelCount], self.currentRow, self.currentColumn)
+            layout.addWidget(reset_button_list[self.modelCount], self.currentRow+1, self.currentColumn)
         self.modelCount += 1
+        
+    def molecule_selected(self, text):
+        #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
+        #with whatever conditions passed
+        if text != None:
+            if self.animator != None:
+                self.animator.close()
+            self.animator = anim(create_morphology(simData), simData, text, mayavi_widget_list[window.modelCount-1])
+    def slider_movement(self):
+        position = self.progress_slider.value()
+        x = int((position/100)*self.iterations)
+        self.setCurrentFrame(x)
+        self.progress_slider_label.setText(str(x/1000)+ "s")
+    
     def resetAnimation(self):
-        mayavi_widget_list[0].setCurrentFrame(0)
-        mayavi_widget_list[0].progress_slider.setValue(0)
-        mayavi_widget_list[0].progress_bar.setValue(0)
+        self.setCurrentFrame(0)
+        self.progress_slider.setValue(0)
+        self.progress_bar.setValue(0)
         
         
 class MayaviQWidget(QtGui.QWidget):
@@ -348,26 +378,11 @@ class MayaviQWidget(QtGui.QWidget):
         self.colorBar = mlab.colorbar(object=self.colorBarDummySurf, title='Concentration', orientation='vertical')
         self.iterations = 0
         self.surf = None
-        self.progress_bar = progress_bar
-        self.progress_slider = progress_slider
+        self.progress_bar = progress_bar_list[window.modelCount-1]
+        self.progress_slider = progress_slider_list[window.modelCount-1]
         self.progress_slider_label = progress_slider_label
         self.progress_label = progress_label
         self.population = 0
-        
-    
-    def molecule_selected(self, text):
-        #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
-        #with whatever conditions passed
-        if text != None:
-            if self.animator != None:
-                self.animator.close()
-            self.animator = anim(create_morphology(simData), simData, text, self)
-    
-    def slider_movement(self):
-        position = self.progress_slider.value()
-        x = int((position/100)*self.iterations)
-        self.setCurrentFrame(x)
-        self.progress_slider_label.setText(str(x/1000)+ "s")
 
     def setCurrentFrame(self, frame):
         self.currentFrame = frame
@@ -397,35 +412,35 @@ def anim(ug, simData, moleculeType, widgetObject):
     out_location,dt,samples = get_mol_info(simData,simData
                                            ['model']['output']['__main__']['species'][:],getMorphologyGrid())
     molnum = get_mol_index(simData, "all", moleculeType)
-    mayavi_widget_list[0].population = get_voxel_molecule_conc(simData, moleculeType, out_location)
-    mayavi_widget_list[0].iterations = out_location[moleculeType]['samples']
+    mayavi_widget_list[window.modelCount-1].population = get_voxel_molecule_conc(simData, moleculeType, out_location)
+    mayavi_widget_list[window.modelCount-1].iterations = out_location[moleculeType]['samples']
     dt=out_location[moleculeType]['dt']
     #Creates mayavi surface to be shown corresponding with the unstructured grid(ug)
-    mayavi_widget_list[0].surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
-    mlab.pipeline.surface(mlab.pipeline.extract_edges(mayavi_widget_list[0].surf), color=(0, 0, 0))# @UndefinedVariable
-    mayavi_widget_list[0].surf.module_manager.scalar_lut_manager.data_range = [0, np.max(mayavi_widget_list[0].population)]
+    mayavi_widget_list[window.modelCount-1].surf = mlab.pipeline.surface(ug, opacity =1, colormap='hot') 
+    mlab.pipeline.surface(mlab.pipeline.extract_edges(mayavi_widget_list[window.modelCount-1].surf), color=(0, 0, 0))# @UndefinedVariable
+    mayavi_widget_list[window.modelCount-1].surf.module_manager.scalar_lut_manager.data_range = [0, np.max(mayavi_widget_list[window.modelCount-1].population)]
     
     #Set Colorbar range for this Molecule Type
-    mayavi_widget_list[0].colorbar_min, mayavi_widget_list[0].colorbar_max = 0, np.max(mayavi_widget_list[0].population)
-    mayavi_widget_list[0].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [mayavi_widget_list[0].colorbar_min, mayavi_widget_list[0].colorbar_max]
+    mayavi_widget_list[window.modelCount-1].colorbar_min, mayavi_widget_list[window.modelCount-1].colorbar_max = 0, np.max(mayavi_widget_list[window.modelCount-1].population)
+    mayavi_widget_list[window.modelCount-1].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [mayavi_widget_list[window.modelCount-1].colorbar_min, mayavi_widget_list[window.modelCount-1].colorbar_max]
     
 
     #Actual Animation Loop
-    while mayavi_widget_list[0].getCurrentFrame() < mayavi_widget_list[0].iterations:       
+    while mayavi_widget_list[window.modelCount-1].getCurrentFrame() < mayavi_widget_list[window.modelCount-1].iterations:       
         
-        concentrations = mayavi_widget_list[0].population[mayavi_widget_list[0].getCurrentFrame(),:]
+        concentrations = mayavi_widget_list[window.modelCount-1].population[mayavi_widget_list[window.modelCount-1].getCurrentFrame(),:]
         ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
         ug.point_data.scalars.name = 'concentrations' 
         ug.modified()
        
-        mayavi_widget_list[0].setCurrentFrame(mayavi_widget_list[0].getCurrentFrame()+1)   
-        mayavi_widget_list[0].progress_label.setText(str(mayavi_widget_list[0].getCurrentFrame()/1000) + "s")
-        mayavi_widget_list[0].progress_bar.setValue((mayavi_widget_list[0].getCurrentFrame()/mayavi_widget_list[0].iterations)*100)
+        mayavi_widget_list[window.modelCount-1].setCurrentFrame(mayavi_widget_list[window.modelCount-1].getCurrentFrame()+1)   
+        mayavi_widget_list[window.modelCount-1].progress_label.setText(str(mayavi_widget_list[window.modelCount-1].getCurrentFrame()/1000) + "s")
+        mayavi_widget_list[window.modelCount-1].progress_bar.setValue((mayavi_widget_list[window.modelCount-1].getCurrentFrame()/mayavi_widget_list[window.modelCount-1].iterations)*100)
         yield
         
     #If completed, reset to beginning.
-    if mayavi_widget_list[0].getCurrentFrame() >= (mayavi_widget_list[0].iterations-1):
-        mayavi_widget_list[0].setCurrentFrame(0)
+    if mayavi_widget_list[window.modelCount-1].getCurrentFrame() >= (mayavi_widget_list[window.modelCount-1].iterations-1):
+        mayavi_widget_list[window.modelCount-1].setCurrentFrame(0)
 
 
 def getMoleculeList(simData):
@@ -485,47 +500,36 @@ if __name__ == "__main__":
     
     simData = get_h5simData(fileName)
     
-    progress_bar = QtGui.QProgressBar()
-
-    progress_slider = QSlider(Qt.Horizontal)
-    
-    
     app = QtGui.QApplication.instance()
     container = QtGui.QWidget()
     layout = QtGui.QGridLayout(container)
-    model = QStandardItemModel() #Required for searchable comboBox
+    comboBoxItemModel = QStandardItemModel() #Required for searchable comboBox
     progress_label = QtGui.QLabel(container)
     progress_slider_label = QtGui.QLabel(container)
     window = Window()
     comboBox = ExtendedCombo()
     mayavi_widget_list = []
-    reset_button_list =[]
+    reset_button_list = []
+    progress_bar_list = []
+    progress_slider_list = []
 
-    mayavi_widget_list.append(MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)) #Initiates first morphology
     reset_button_list.append(QtGui.QPushButton('Reset', window))
     reset_button_list[0].clicked.connect(window.resetAnimation)
-    
-    animControlWindow_list = []
-    
-    #mayavi_widget_list[0]3 = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
-    #mayavi_widget_list[0]4 = MayaviQWidget(container, progress_bar, progress_slider, progress_label, progress_slider_label)
-    
-    #These go somewhere after layout is created:
-    #layout.addWidget(mayavi_widget_list[0]3, 5, 1)
-    #layout.addWidget(mayavi_widget_list[0]4, 5, 2)
-
+    progress_bar_list.append(QtGui.QProgressBar())
+    progress_slider_list.append(QSlider(Qt.Horizontal))
+    mayavi_widget_list.append(MayaviQWidget(container, progress_bar_list[0], progress_slider_list[0], progress_label, progress_slider_label)) #Initiates first morphology
+    progress_slider_list[0].valueChanged.connect(window.slider_movement)
     
     moleculeList = sorted(getMoleculeList(simData)) #simdata.... then past just the list below
     for i,moleculeType in enumerate(moleculeList):
         item = QStandardItem(moleculeType)
-        model.setItem(i, 0, item)
+        comboBoxItemModel.setItem(i, 0, item)
     
     
-    comboBox.setModel(model)
+    comboBox.setModel(comboBoxItemModel)
     comboBox.setModelColumn(0)
-    comboBox.activated[str].connect(mayavi_widget_list[0].molecule_selected)
+    comboBox.activated[str].connect(window.molecule_selected)
     
-    progress_slider.valueChanged.connect(mayavi_widget_list[0].slider_movement)
     
     fileNameLabel = QtGui.QLabel(mayavi_widget_list[0])
     fileNameLabel.setText(fileName)
@@ -535,13 +539,11 @@ if __name__ == "__main__":
     layout.addWidget(mayavi_widget_list[0], 4, 1) # Visualization of morphology
     layout.addWidget(reset_button_list[0], 5, 1)
     layout.addWidget(progress_label, 2,0)
-    layout.addWidget(progress_bar, 2, 1)
+    layout.addWidget(progress_bar_list[0], 2, 1)
     layout.addWidget(progress_slider_label,3, 0)  
-    layout.addWidget(progress_slider, 3, 1)
-    
+    layout.addWidget(progress_slider_list[0], 3, 1) 
 
     container.show()
-   
     
     window.setCentralWidget(container)
     window.show()
