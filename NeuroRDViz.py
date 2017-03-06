@@ -77,7 +77,11 @@ class ExtendedCombo( QComboBox ):
         if text:
             index = self.findText(text)
             self.setCurrentIndex(index)
-        
+   
+'''
+This class is responsible for creating the embedded window of Mayavi that you display a model in.
+See this link for more: http://docs.enthought.com/mayavi/mayavi/building_applications.html
+'''     
 class Visualization(HasTraits):
     scene = Instance(MlabSceneModel, ())
 
@@ -93,7 +97,10 @@ class Visualization(HasTraits):
                      height=250, width=300, show_label=False),
                 resizable=True  
                 )
-
+'''
+This function maps the dendritic voxels to 
+8 respective points on a mayavi will group into Hexahedrons
+'''
 def create_morphology(simData):
            
     grid = np.array(getMorphologyGrid()).view(np.recarray)                          
@@ -129,7 +136,9 @@ def get_voxel_molecule_conc(simData, moleculeType, out_location):
     return outputSetConcs
 
 
-#Convert molecular population to molecular concentration
+''' 
+Converts raw number of molecules(population) to an actual molecular concentration density 
+'''
 def population_to_concentration(pop_list, voxel_volumes):
     conc_list = np.zeros(np.shape(pop_list))
     
@@ -141,6 +150,9 @@ def population_to_concentration(pop_list, voxel_volumes):
     #print out a volumes[3] volumes[6] & conc_list[3] [6] with two types 
     return conc_list
 
+'''
+Class for setting options on the scale bar to the left of the model view
+'''
 class colorBarInputDialog(QWidget):
 
     def __init__(self):
@@ -229,7 +241,9 @@ class colorBarInputDialog(QWidget):
             self.msg.setWindowTitle("No Existing Colorbar")   
     def closePopup(self):
         self.close()
-
+'''
+Help window to explain how to optimally use visualizer; needs work.
+''' 
 class helpWindow(QWidget):
 
     def __init__(self):
@@ -245,10 +259,14 @@ class helpWindow(QWidget):
         
     def closePopup(self):
         self.close()
-
+'''
+Main window of QtGui; 
+Overall layout of widgets are organized here and
+most operations will address objects created here. 
+'''
 class Window(QtGui.QMainWindow):
     
-    #Main Menus should go here... things which need to appear regardless
+    #Main Menus should go here - things which appear at startup.
     def __init__(self):
         super(Window, self).__init__()
         self.setGeometry(50, 50, 1100, 800)
@@ -302,7 +320,7 @@ class Window(QtGui.QMainWindow):
         
         self.statusBar()
         self.home()
-        
+    #Similar to init; home loads many objects at startup.    
     def home(self):
        
         toolBarColorBarMinMax = QtGui.QAction(QtGui.QIcon('colorBarIcon.png'), "Set Min/Max of ColorBar", self)
@@ -325,12 +343,12 @@ class Window(QtGui.QMainWindow):
         self.toolBar.addAction(toolBarHelp)
         
         self.show()
-
+    
     def close_application(self):
         choice = QtGui.QMessageBox.question(self, 'Exit', "Are you sure?", "Yes", "No")
         if choice == 0:
             sys.exit()
-
+    
     def changeMinMaxColorBar(self):
         self.newEditWindow = colorBarInputDialog()
         self.newEditWindow.show()
@@ -360,7 +378,7 @@ class Window(QtGui.QMainWindow):
         text, ok = QInputDialog.getText(self, 'Molecule Selection', 'Enter Window # to Simulate in  (1-' +str(window.viewTally) +")" )
         if ok:
             self.viewIndex = int(text)
-
+    #This is where the animation portion of the program is called.
     def molecule_selected(self, text):
         #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
         #with whatever conditions passed
@@ -381,7 +399,6 @@ class Window(QtGui.QMainWindow):
         
         
 class MayaviQWidget(QtGui.QWidget):
-    #unable to call functions within this space, sending methods to anim
     def __init__(self, parent):
         
         QtGui.QWidget.__init__(self, parent)
@@ -428,13 +445,13 @@ class MayaviQWidget(QtGui.QWidget):
     def getcolorbar_max(self):
         return self.colorbar_max
 
-    
+'''
+This function runs the animation portion of the visualizer
+'''
 @mlab.animate(delay=10) 
 def anim(simData, moleculeType):
     mayavi_widget_list[window.viewIndex-1].colorBar.visible = True
-    #mol_type_label_list[window.viewIndex-1].setText(moleculeType)
-        
-    #The decorated function will return the Animator instance used and a user may call its Stop method to stop the animation.
+    #mol_type_label_list[window.viewIndex-1].setText(moleculeType)      
     #Simulation Data Gathering
     out_location,dt,samples = get_mol_info(simData,simData
                                 ['model']['output']['__main__']['species'][:],getMorphologyGrid())
@@ -475,10 +492,14 @@ def anim(simData, moleculeType):
     if mayavi_widget_list[0].getCurrentFrame() >= (mayavi_widget_list[0].iterations-1):
         mayavi_widget_list[0].setCurrentFrame(0)
         
-
+'''
+Returns the list of molecule types available in the h5 simulation file
+'''
 def getMoleculeList(simData):
     return simData['model']['species']
-                                            
+'''
+Returns the h5 simulation file 
+'''                                                 
 def get_h5simData(fileName):
     simData = h5.File(fileName,"r")
     return simData
@@ -493,7 +514,9 @@ Returns the container portion of the QtWindow so it can be accessed during runti
 def getQtWindow():
     return container 
     
-#Searches the list of molecules and returns the corresponding index. Returns -1 if not found.
+'''
+Searches the list of molecules and returns the corresponding index. Returns -1 if not found.
+'''
 def get_mol_index(simData, outputSet, molecule):
     indices=np.where(simData['model']['output'][outputSet]['species'][:]==molecule)[0]
     if len(indices) == 1:
@@ -530,6 +553,9 @@ def get_mol_info(simData,plot_molecules,grid_points):
             out_location[molecule]={'samples':samples[imol],'dt':dt[imol],'voxels': grid_points,'location': temp_dict}
     return out_location,dt,samples
 
+'''
+Fills the dropdown window with choices for molecules
+'''
 def populate_comboBox():
     comboBoxItemModel = QStandardItemModel() #Required for searchable comboBox
     comboBox = ExtendedCombo()
@@ -547,6 +573,9 @@ def populate_comboBox():
     
 if __name__ == "__main__":
     
+    #Passes filename argument to NeuroRDViz.py to find the desired model to visualize. Must be in the same folder.
+    #For example, the following could be entered into the command prompt:
+    # "python NeuroRDViz.py Model_CamKIInew_pDglUchi5s-dhpg5.h5 
     try:
         fileName=fname # @UndefinedVariable
     except NameError:
@@ -554,6 +583,7 @@ if __name__ == "__main__":
     
     simData = get_h5simData(fileName)
     
+    #Creating instances of mayavi UI
     app = QtGui.QApplication.instance()
     container = QtGui.QWidget()
     layout = QtGui.QGridLayout(container)
