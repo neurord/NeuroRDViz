@@ -27,7 +27,7 @@ from mayavi.core.ui.api import MayaviScene, MlabSceneModel, \
         SceneEditor
 import numpy as np
 from tvtk.api import tvtk
-from mayavi import mlab     ######## This line of code takes MUCH longer than anything else (be more selective in imports to expedite?)
+from mayavi import mlab     ######## This line of code takes MUCH longer than anything else. Solution: be more selective in imports?
 import h5py as h5
 import sys
 Avogadro=6.023e14
@@ -87,7 +87,8 @@ class Visualization(HasTraits):
 
     @on_trait_change('scene.activated')
     def update_plot(self):
-        ug=create_morphology(simData)
+        print('simData:', simData)
+        ug = create_morphology(simData)
         surf = mlab.pipeline.surface(ug, opacity=1)
         self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
         mlab.axes(surf, nb_labels=7)
@@ -102,7 +103,8 @@ This function maps the dendritic voxels to
 8 respective points on a mayavi will group into Hexahedrons
 '''
 def create_morphology(simData):
-           
+    
+    print('here1')       
     grid = np.array(getMorphologyGrid()).view(np.recarray)                          
     points = np.array((
          (grid.x0, grid.y0, grid.z0), (grid.x1, grid.y1, grid.z1), (grid.x2, grid.y2, grid.z2), (grid.x3, grid.y3, grid.z3-grid.deltaZ),
@@ -112,11 +114,16 @@ def create_morphology(simData):
     points = points.reshape(-1, 3)
     voxels = np.arange(points.shape[0]).reshape(-1, 8)
 
-    voxel_type = tvtk.Hexahedron().cell_type # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
-    mayavi_widget_list[window.viewIndex-1].ug = tvtk.UnstructuredGrid(points=points) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
-    mayavi_widget_list[window.viewIndex-1].ug.set_cells(voxel_type, voxels)
+    print('here2')
 
-    return mayavi_widget_list[window.viewIndex-1].ug
+    voxel_type = tvtk.Hexahedron().cell_type # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
+    print('here3', window.viewIndex-1, mayavi_widget_list)
+    ug = tvtk.UnstructuredGrid(points=points) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
+    print('here4')
+    ug.set_cells(voxel_type, voxels)
+    print('here5')
+
+    return ug
 
 '''
 1) Accepts a molecule type
@@ -215,7 +222,7 @@ class colorBarInputDialog(QWidget):
             mayavi_widget_list[0].surf.module_manager.scalar_lut_manager.data_range = [0, np.max(mayavi_widget_list[0].population)]
             self.minLabel.setText(str(0))
             self.maxLabel.setText(str(np.max(mayavi_widget_list[0].population)))
-        except:
+        except Exception:
             self.msg = QMessageBox()
             self.msg.setIcon(QMessageBox.Information)
             self.msg.setText("Select a Molecule First")
@@ -234,7 +241,7 @@ class colorBarInputDialog(QWidget):
             elif self.leScale.text() == "Linear":
                 lut.scale = 'linear'
                 cbarlut.scale = 'linear'
-        except:
+        except Exception:
             self.msg = QMessageBox()
             self.msg.setIcon(QMessageBox.Information)
             self.msg.setText("Select a Molecule First")
@@ -259,145 +266,63 @@ class helpWindow(QWidget):
         
     def closePopup(self):
         self.close()
+
 '''
-Main window of QtGui; 
-Overall layout of widgets are organized here and
-most operations will address objects created here. 
+This function runs the animation portion of the visualizer
+
+The "@mlab.animate" code above it indicates that anim 
+is a decorator function of the original mayavi function named animate
+Decorators essentially work as wrappers, modifying the behavior of the code 
+before and after the target function, augmenting the original functionality.
+In short, "anim" does what "animate" does, but with its own specifications.
+
+(delay=x) sets the speed where x is # of miliseconds between each frame.
 '''
-class Window(QtGui.QMainWindow):
+@mlab.animate(delay=10) 
+def anim(simData, moleculeType):
+    mayavi_widget_list[window.viewIndex-1].colorBar.visible = True
+    #mol_type_label_list[window.viewIndex-1].setText(moleculeType)      
+    #Simulation Data Gathering
+    out_location,dt,samples = get_mol_info(simData,simData
+                                ['model']['output']['__main__']['species'][:],getMorphologyGrid())
+    molnum = get_mol_index(simData, "all", moleculeType)
+    mayavi_widget_list[window.viewIndex-1].population = get_voxel_molecule_conc(simData, moleculeType, out_location)
+    mayavi_widget_list[window.viewIndex-1].iterations = out_location[moleculeType]['samples']
+    dt=out_location[moleculeType]['dt']
+    mayavi_widget_list[window.viewIndex-1].ug = create_morphology(simData)
     
-    #Main Menus should go here - things which appear at startup.
-    def __init__(self):
-        super(Window, self).__init__()
-        self.setGeometry(50, 50, 1100, 800)
-        self.setWindowTitle("NeuoRD Visualizer" + " - " + fileName)
-        
-        self.animator = None
-        
-        exitAction = QtGui.QAction("&Exit -", self)
-        exitAction.setShortcut("Ctrl+Q")
-        exitAction.setStatusTip('Close Application')
-        exitAction.triggered.connect(self.close_application) #.triggered = .clicked
-        
-        minMaxColorBarAction = QtGui.QAction("&Min/Max Range for Colorbar -", self)
-        minMaxColorBarAction.setShortcut("Ctrl+M")
-        minMaxColorBarAction.setStatusTip('Change the displayed minimum & maximum ranges on the color bar.')
-        minMaxColorBarAction.triggered.connect(self.changeMinMaxColorBar)
-        selectModelAction = QtGui.QAction("&Select a Model -", self)
-        selectModelAction.setShortcut("Ctrl+S")
-        selectModelAction.setStatusTip('Select another view to simulate.')
-        selectModelAction.triggered.connect(self.select_model)
-        
-        addAction = QtGui.QAction("&Add a Model -", self)
-        addAction.setShortcut("Ctrl+A")
-        addAction.setStatusTip('Add Items to Visualizer')
-        addAction.triggered.connect(self.add_view) #.triggered = .clicked
-        
-        helpAction = QtGui.QAction("&How Do I... -", self)
-        helpAction.setShortcut("Ctrl+H")
-        helpAction.setStatusTip('Learn More About How to Use the Visualizer')
-        helpAction.triggered.connect(self.help_action) #.triggered = .clicked
-        
-        mainMenu = self.menuBar()
-        fileMenu = mainMenu.addMenu('&File')
-        fileMenu.addAction(exitAction)
-        editMenu = mainMenu.addMenu('&Edit')
-        editMenu.addAction(minMaxColorBarAction)
-        editMenu.addAction(selectModelAction)
-        addMenu = mainMenu.addMenu('&Add')
-        addMenu.addAction(addAction)
-        helpMenu = mainMenu.addMenu('&Help')
-        helpMenu.addAction(helpAction)
-        
-        #Create Progress bar
-        self.progress_slider_label = progress_slider_label
-        self.progress_label = progress_label
-        
-        self.viewTally = 1
-        self.rowIndex = 4
-        self.columnIndex = 0
-        self.viewIndex = 0
-        
-        self.statusBar()
-        self.home()
-    #Similar to init; home loads many objects at startup.    
-    def home(self):
-       
-        toolBarColorBarMinMax = QtGui.QAction(QtGui.QIcon('colorBarIcon.png'), "Set Min/Max of ColorBar", self)
-        toolBarColorBarMinMax.setStatusTip('Change the default min/max range on the color bar.')
-        toolBarColorBarMinMax.triggered.connect(self.changeMinMaxColorBar)
-        toolBarAddView = QtGui.QAction(QtGui.QIcon('addModelIcon.png'), "Add a Viewer", self)
-        toolBarAddView.setStatusTip('Add another window to the visualizer.')
-        toolBarAddView.triggered.connect(self.add_view)
-        toolBarSelectModel = QtGui.QAction(QtGui.QIcon('selectModelIcon.png'), "Select a Model", self)
-        toolBarSelectModel.setStatusTip('Select an Existing Model to Visualize.')
-        toolBarSelectModel.triggered.connect(self.select_model)
-        toolBarHelp = QtGui.QAction(QtGui.QIcon('helpIcon.png'), "Help", self)
-        toolBarHelp.setStatusTip("Learn More About How to Use the Visualizer")
-        toolBarHelp.triggered.connect(self.help_action)
-        
-        self.toolBar = self.addToolBar("ToolBar")
-        self.toolBar.addAction(toolBarColorBarMinMax)
-        self.toolBar.addAction(toolBarAddView)
-        self.toolBar.addAction(toolBarSelectModel)
-        self.toolBar.addAction(toolBarHelp)
-        
-        self.show()
+    #Creates mayavi surface to be shown, correspondent with the unstructured grid(ug)
+    mayavi_widget_list[window.viewIndex-1].surf = (
+        mlab.pipeline.surface(mayavi_widget_list[window.viewIndex-1].ug, opacity =1, colormap='hot')) 
+    mayavi_widget_list[window.viewIndex-1].surf.module_manager.scalar_lut_manager.data_range = [
+        0, np.max(mayavi_widget_list[window.viewIndex-1].population)]
     
-    def close_application(self):
-        choice = QtGui.QMessageBox.question(self, 'Exit', "Are you sure?", "Yes", "No")
-        if choice == 0:
-            sys.exit()
+    #Set Colorbar range for this Molecule Type
+    mayavi_widget_list[window.viewIndex-1].colorbar_min, mayavi_widget_list[window.viewIndex-1].colorbar_max = (
+        0, np.max(mayavi_widget_list[window.viewIndex-1].population))
+
+    mayavi_widget_list[window.viewIndex-1].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [
+        mayavi_widget_list[window.viewIndex-1].colorbar_min, mayavi_widget_list[window.viewIndex-1].colorbar_max]
     
-    def changeMinMaxColorBar(self):
-        self.newEditWindow = colorBarInputDialog()
-        self.newEditWindow.show()
-    
-    def help_action(self):
-        self.newHelpWindow = helpWindow()
-        self.newHelpWindow.show()
-    
-    #Adds new molecule visualization view 
-    def add_view(self): 
-        mayavi_widget_list.append(MayaviQWidget(container))             
-        if self.viewTally % 2 != 0: 
-            self.columnIndex=0
-            layout.addWidget(populate_comboBox(), self.rowIndex, self.columnIndex)
-            layout.addWidget(mayavi_widget_list[self.viewTally-1], self.rowIndex+1, self.columnIndex)
-        else:
-            self.columnIndex=1
-            layout.addWidget(populate_comboBox(), self.rowIndex, self.columnIndex)
-            layout.addWidget(mayavi_widget_list[self.viewTally-1], self.rowIndex+1, self.columnIndex)
-            self.rowIndex += 2
+
+    #Actual Animation Loop    
+    while mayavi_widget_list[0].getCurrentFrame() < mayavi_widget_list[0].iterations:       
+        for each in mayavi_widget_list:
+            concentrations = mayavi_widget_list[window.viewIndex-1].population[mayavi_widget_list[window.viewIndex-1].getCurrentFrame(),:]
+            mayavi_widget_list[window.viewIndex-1].ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
+            mayavi_widget_list[window.viewIndex-1].ug.point_data.scalars.name = 'concentrations' 
+            mayavi_widget_list[window.viewIndex-1].ug.modified()
+            
+            mayavi_widget_list[window.viewIndex-1].setCurrentFrame(mayavi_widget_list[window.viewIndex-1].getCurrentFrame()+1)   
+            window.progress_label.setText(str(mayavi_widget_list[window.viewIndex-1].getCurrentFrame()/1000) + "s")
+            progress_bar.setValue((mayavi_widget_list[window.viewIndex-1].getCurrentFrame()/mayavi_widget_list[window.viewIndex-1].iterations)*100)
+        yield
         
-        
-        self.viewTally += 1
-        self.viewIndex += 1
-        
-    def select_model(self):
-        text, ok = QInputDialog.getText(self, 'Molecule Selection', 'Enter Window # to Simulate in  (1-' +str(window.viewTally) +")" )
-        if ok:
-            self.viewIndex = int(text)
-    #This is where the animation portion of the program is called.
-    def molecule_selected(self, text):
-        #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
-        #with whatever conditions passed
-        if text != None:
-            if self.animator != None:
-                self.animator.close()
-            self.animator = anim(simData, text)
-    def slider_movement(self):
-        position = self.progress_slider.value()
-        x = int((position/100)*self.iterations)
-        self.setCurrentFrame(x)
-        self.progress_slider_label.setText(str(x/1000)+ "s")
-    
-    def resetAnimation(self, resetButtonNumber):
-        mayavi_widget_list[window.viewIndex-1].setCurrentFrame(0)
-        self.progress_slider.setValue(0)
-        self.progress_bar.setValue(0)
-        
-        
+    #If completed, reset to beginning.
+    if mayavi_widget_list[0].getCurrentFrame() >= (mayavi_widget_list[0].iterations-1):
+        mayavi_widget_list[0].setCurrentFrame(0)
+
+'''A view embedded in the window to contain an instance of the model'''
 class MayaviQWidget(QtGui.QWidget):
     def __init__(self, parent):
         
@@ -444,53 +369,166 @@ class MayaviQWidget(QtGui.QWidget):
 
     def getcolorbar_max(self):
         return self.colorbar_max
-
 '''
-This function runs the animation portion of the visualizer
+Main window of QtGui; 
+Overall layout of widgets are organized here and
+most operations will address objects created here. 
 '''
-@mlab.animate(delay=10) 
-def anim(simData, moleculeType):
-    mayavi_widget_list[window.viewIndex-1].colorBar.visible = True
-    #mol_type_label_list[window.viewIndex-1].setText(moleculeType)      
-    #Simulation Data Gathering
-    out_location,dt,samples = get_mol_info(simData,simData
-                                ['model']['output']['__main__']['species'][:],getMorphologyGrid())
-    molnum = get_mol_index(simData, "all", moleculeType)
-    mayavi_widget_list[window.viewIndex-1].population = get_voxel_molecule_conc(simData, moleculeType, out_location)
-    mayavi_widget_list[window.viewIndex-1].iterations = out_location[moleculeType]['samples']
-    dt=out_location[moleculeType]['dt']
-    mayavi_widget_list[window.viewIndex-1].ug = create_morphology(simData)
+class Window(QtGui.QMainWindow):
     
-    #Creates mayavi surface to be shown, correspondent with the unstructured grid(ug)
-    mayavi_widget_list[window.viewIndex-1].surf = (
-        mlab.pipeline.surface(mayavi_widget_list[window.viewIndex-1].ug, opacity =1, colormap='hot')) 
-    mayavi_widget_list[window.viewIndex-1].surf.module_manager.scalar_lut_manager.data_range = [
-        0, np.max(mayavi_widget_list[window.viewIndex-1].population)]
-    
-    #Set Colorbar range for this Molecule Type
-    mayavi_widget_list[window.viewIndex-1].colorbar_min, mayavi_widget_list[window.viewIndex-1].colorbar_max = (
-        0, np.max(mayavi_widget_list[window.viewIndex-1].population))
-
-    mayavi_widget_list[window.viewIndex-1].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [
-        mayavi_widget_list[window.viewIndex-1].colorbar_min, mayavi_widget_list[window.viewIndex-1].colorbar_max]
-    
-
-    #Actual Animation Loop    
-    while mayavi_widget_list[0].getCurrentFrame() < mayavi_widget_list[0].iterations:       
-        for each in mayavi_widget_list:
-            concentrations = mayavi_widget_list[each].population[mayavi_widget_list[each].getCurrentFrame(),:]
-            mayavi_widget_list[each].ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
-            mayavi_widget_list[each].ug.point_data.scalars.name = 'concentrations' 
-            window.mayavi_widget_list[each].ug.modified()
-            
-            mayavi_widget_list[each].setCurrentFrame(mayavi_widget_list[each].getCurrentFrame()+1)   
-            window.progress_label.setText(str(mayavi_widget_list[each].getCurrentFrame()/1000) + "s")
-            progress_bar.setValue((mayavi_widget_list[each].getCurrentFrame()/mayavi_widget_list[each].iterations)*100)
-        yield
+    #Main Menus should go here - things which appear at startup.
+    def __init__(self):
+        super(Window, self).__init__()
+        self.setGeometry(50, 50, 1100, 800)
+        self.setWindowTitle("NeuoRD Visualizer" + " - " + fileName)
         
-    #If completed, reset to beginning.
-    if mayavi_widget_list[0].getCurrentFrame() >= (mayavi_widget_list[0].iterations-1):
-        mayavi_widget_list[0].setCurrentFrame(0)
+        self.animator = None
+        
+        #Main Menu details for "Add a Viewer" button
+        addAction = QtGui.QAction("&Add a Viewer -", self)
+        addAction.setShortcut("Ctrl+A")
+        addAction.setStatusTip('Add Items to Visualizer')
+        addAction.triggered.connect(self.add_view) #.triggered = .clicked
+        
+        #Main Menu details for "Exit" button
+        exitAction = QtGui.QAction("&Exit -", self)
+        exitAction.setShortcut("Ctrl+Q")
+        exitAction.setStatusTip('Close Application')
+        exitAction.triggered.connect(self.close_application) #.triggered = .clicked
+        
+        #Main Menu details for "Min/Max Range for Colorbar" button
+        minMaxColorBarAction = QtGui.QAction("&Min/Max Range for Colorbar -", self)
+        minMaxColorBarAction.setShortcut("Ctrl+M")
+        minMaxColorBarAction.setStatusTip('Change the displayed minimum & maximum ranges on the color bar.')
+        minMaxColorBarAction.triggered.connect(self.changeMinMaxColorBar)
+        
+        #Main Menu details for "Select a Model" button 
+        ## note: this should become obsolete eventually once viewer specific molecule section & start/stop buttons are added 
+        selectModelAction = QtGui.QAction("&Select a Model -", self)
+        selectModelAction.setShortcut("Ctrl+S")
+        selectModelAction.setStatusTip('Select another view to simulate.')
+        selectModelAction.triggered.connect(self.select_view)    
+        
+        #Main Menu details for "Help" button 
+        helpAction = QtGui.QAction("&Help -", self)
+        helpAction.setShortcut("Ctrl+H")
+        helpAction.setStatusTip('Learn More About How to Use the Visualizer')
+        helpAction.triggered.connect(self.help_action) #.triggered = .clicked
+        
+        mainMenu = self.menuBar()
+        
+        #Adds Main Menu Toolbar "File" & assigns items, created above, to its dropdown.
+        fileMenu = mainMenu.addMenu('&File')
+        fileMenu.addAction(addAction)
+        fileMenu.addAction(exitAction)
+        
+        #Adds Main Menu Toolbar "Edit" & assigns items, created above, to its dropdown.
+        editMenu = mainMenu.addMenu('&Edit')
+        editMenu.addAction(minMaxColorBarAction)
+        editMenu.addAction(selectModelAction)
+        
+        #Adds Main Menu Toolbar "Help" & assigns items, created above, to its dropdown.
+        helpMenu = mainMenu.addMenu('&Help')
+        helpMenu.addAction(helpAction)
+        
+        #Create Progress bar
+        self.progress_slider_label = progress_slider_label
+        self.progress_label = progress_label
+        
+        #Index of current Viewer 
+        self.viewIndex = 0
+        #Indexes for current row and column positions.
+        self.rowIndex = 4
+        self.columnIndex = 0
+        #Tally of total Viewers added
+        self.viewTally = 1
+        
+        self.statusBar()
+        self.home()
+        
+    #Similar to init; home loads objects at startup.    
+    def home(self):
+       
+        toolBarColorBarMinMax = QtGui.QAction(QtGui.QIcon('colorBarIcon.png'), "Set Min/Max of ColorBar", self)
+        toolBarColorBarMinMax.setStatusTip('Change the default min/max range on the color bar.')
+        toolBarColorBarMinMax.triggered.connect(self.changeMinMaxColorBar)
+        toolBarAddView = QtGui.QAction(QtGui.QIcon('addModelIcon.png'), "Add a Viewer", self)
+        toolBarAddView.setStatusTip('Add another window to the visualizer.')
+        toolBarAddView.triggered.connect(self.add_view)
+        toolBarSelectView = QtGui.QAction(QtGui.QIcon('selectViewIcon.png'), "Select a View", self)
+        toolBarSelectView.setStatusTip('Select an Existing Model to Visualize.')
+        toolBarSelectView.triggered.connect(self.select_view)
+        toolBarHelp = QtGui.QAction(QtGui.QIcon('helpIcon.png'), "Help", self)
+        toolBarHelp.setStatusTip("Learn More About How to Use the Visualizer")
+        toolBarHelp.triggered.connect(self.help_action)
+        
+        self.toolBar = self.addToolBar("ToolBar")
+        self.toolBar.addAction(toolBarColorBarMinMax)
+        self.toolBar.addAction(toolBarAddView)
+        self.toolBar.addAction(toolBarSelectView)
+        self.toolBar.addAction(toolBarHelp)
+        
+        self.show()
+    
+    def close_application(self):
+        choice = QtGui.QMessageBox.question(self, 'Exit', "Are you sure?", "Yes", "No")
+        if choice == 0:
+            sys.exit()
+    
+    def changeMinMaxColorBar(self):
+        self.newEditWindow = colorBarInputDialog()
+        self.newEditWindow.show()
+    
+    def help_action(self):
+        self.newHelpWindow = helpWindow()
+        self.newHelpWindow.show()
+    
+    #Adds new molecule visualization view 
+    def add_view(self): 
+        print("add here1")
+        mayavi_widget_list.append(MayaviQWidget(container))
+        print("add here2", mayavi_widget_list)             
+        if self.viewTally % 2 != 0: 
+            self.columnIndex=0
+            layout.addWidget(populate_comboBox(), self.rowIndex, self.columnIndex)
+            layout.addWidget(mayavi_widget_list[self.viewTally-1], self.rowIndex+1, self.columnIndex)
+        else:
+            self.columnIndex=1
+            layout.addWidget(populate_comboBox(), self.rowIndex, self.columnIndex)
+            layout.addWidget(mayavi_widget_list[self.viewTally-1], self.rowIndex+1, self.columnIndex)
+            self.rowIndex += 2
+        
+        
+        self.viewTally += 1
+        self.viewIndex += 1
+        
+    def select_view(self):
+        text, ok = QInputDialog.getText(self, 'Molecule Selection', 'Enter Window # to Simulate in  (1-' +str(window.viewTally) +")" )
+        if ok:
+            self.viewIndex = int(text)
+    #This is where the animation portion of the program is called.
+    def molecule_selected(self, text):
+        #This is necessary otherwise ~anim-loop-obect will be instantiated initially 
+        #with whatever conditions passed
+        if text != None:
+            if self.animator != None:
+                self.animator.close()
+            self.animator = anim(simData, text)
+    def slider_movement(self):
+        position = self.progress_slider.value()
+        x = int((position/100)*self.iterations)
+        self.setCurrentFrame(x)
+        self.progress_slider_label.setText(str(x/1000)+ "s")
+    
+    def resetAnimation(self, resetButtonNumber):
+        mayavi_widget_list[window.viewIndex-1].setCurrentFrame(0)
+        self.progress_slider.setValue(0)
+        self.progress_bar.setValue(0)
+        
+        
+
+
+
         
 '''
 Returns the list of molecule types available in the h5 simulation file
