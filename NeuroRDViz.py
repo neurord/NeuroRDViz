@@ -90,7 +90,7 @@ class Visualization(HasTraits):
         print('simData:', simData)
         ug = create_morphology(simData)
         surf = mlab.pipeline.surface(ug, opacity=1)
-        self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
+        self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) # @UndefinedVariable - this comment tells Eclipse IDE to ignore "error"
         mlab.axes(surf, nb_labels=7)
 
     # the layout of the dialog created
@@ -104,7 +104,6 @@ This function maps the dendritic voxels to
 '''
 def create_morphology(simData):
     
-    print('here1')       
     grid = np.array(getMorphologyGrid()).view(np.recarray)                          
     points = np.array((
          (grid.x0, grid.y0, grid.z0), (grid.x1, grid.y1, grid.z1), (grid.x2, grid.y2, grid.z2), (grid.x3, grid.y3, grid.z3-grid.deltaZ),
@@ -114,14 +113,10 @@ def create_morphology(simData):
     points = points.reshape(-1, 3)
     voxels = np.arange(points.shape[0]).reshape(-1, 8)
 
-    print('here2')
-
-    voxel_type = tvtk.Hexahedron().cell_type # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
-    print('here3', window.viewIndex-1, mayavi_widget_list)
-    ug = tvtk.UnstructuredGrid(points=points) # @UndefinedVariable - this comments tells Eclipse IDE to ignore "error"
-    print('here4')
+    voxel_type = tvtk.Hexahedron().cell_type # @UndefinedVariable - this comment tells Eclipse IDE to ignore "error"
+    ug = tvtk.UnstructuredGrid(points=points) # @UndefinedVariable - this comment tells Eclipse IDE to ignore "error"
     ug.set_cells(voxel_type, voxels)
-    print('here5')
+
 
     return ug
 
@@ -167,12 +162,12 @@ class colorBarInputDialog(QWidget):
         self.setGeometry(0,50,200,50)
         layout = QFormLayout()
         
-        self.minLabel = QLabel(str(mayavi_widget_list[0].colorbar_min))
+        self.minLabel = QLabel(str(mayavi_widget_list[window.viewIndex-1].colorbar_min))
         self.btnMin = QPushButton("Min:")
         self.btnMin.clicked.connect(self.getMin)
         layout.addRow(self.btnMin,self.minLabel)
         
-        self.maxLabel = QLabel(str(mayavi_widget_list[0].colorbar_max))
+        self.maxLabel = QLabel(str(mayavi_widget_list[window.viewIndex-1].colorbar_max))
         self.btnMax = QPushButton("Max:")
         self.btnMax.clicked.connect(self.getMax)
         layout.addRow(self.btnMax,self.maxLabel)
@@ -218,10 +213,10 @@ class colorBarInputDialog(QWidget):
             self.maxLabel.setText(str(num))
     def restoreDefaults(self):
         try:
-            mayavi_widget_list[0].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [0, np.max(mayavi_widget_list[0].population)]
-            mayavi_widget_list[0].surf.module_manager.scalar_lut_manager.data_range = [0, np.max(mayavi_widget_list[0].population)]
+            mayavi_widget_list[window.viewIndex-1].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [0, np.max(mayavi_widget_list[window.viewIndex-1].population)]
+            mayavi_widget_list[window.viewIndex-1].surf.module_manager.scalar_lut_manager.data_range = [0, np.max(mayavi_widget_list[window.viewIndex-1].population)]
             self.minLabel.setText(str(0))
-            self.maxLabel.setText(str(np.max(mayavi_widget_list[0].population)))
+            self.maxLabel.setText(str(np.max(mayavi_widget_list[window.viewIndex-1].population)))
         except Exception:
             self.msg = QMessageBox()
             self.msg.setIcon(QMessageBox.Information)
@@ -231,10 +226,10 @@ class colorBarInputDialog(QWidget):
     def applyChanges(self):
         try:    
             newMin, newMax = float(self.minLabel.text()), float(self.maxLabel.text()) 
-            mayavi_widget_list[0].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [newMin, newMax]            
-            mayavi_widget_list[0].surf.module_manager.scalar_lut_manager.data_range = [newMin, newMax]
-            lut = mayavi_widget_list[0].surf.module_manager.scalar_lut_manager.lut
-            cbarlut = mayavi_widget_list[0].colorBarDummySurf.module_manager.scalar_lut_manager.lut
+            mayavi_widget_list[window.viewIndex-1].colorBarDummySurf.module_manager.scalar_lut_manager.data_range = [newMin, newMax]            
+            mayavi_widget_list[window.viewIndex-1].surf.module_manager.scalar_lut_manager.data_range = [newMin, newMax]
+            lut = mayavi_widget_list[window.viewIndex-1].surf.module_manager.scalar_lut_manager.lut
+            cbarlut = mayavi_widget_list[window.viewIndex-1].colorBarDummySurf.module_manager.scalar_lut_manager.lut
             if self.leScale.text() == "Logarithmic (Note: Min cannot be 0!)":
                 lut.scale = 'log10'
                 cbarlut.scale = 'log10'
@@ -306,7 +301,7 @@ def anim(simData, moleculeType):
     
 
     #Actual Animation Loop    
-    while mayavi_widget_list[0].getCurrentFrame() < mayavi_widget_list[0].iterations:       
+    while mayavi_widget_list[window.viewIndex-1].getCurrentFrame() < mayavi_widget_list[window.viewIndex-1].iterations:       
         for each in mayavi_widget_list:
             concentrations = mayavi_widget_list[window.viewIndex-1].population[mayavi_widget_list[window.viewIndex-1].getCurrentFrame(),:]
             mayavi_widget_list[window.viewIndex-1].ug.point_data.scalars = np.repeat(concentrations, 8)  # Decide how max/min color values are assigned.
@@ -319,8 +314,8 @@ def anim(simData, moleculeType):
         yield
         
     #If completed, reset to beginning.
-    if mayavi_widget_list[0].getCurrentFrame() >= (mayavi_widget_list[0].iterations-1):
-        mayavi_widget_list[0].setCurrentFrame(0)
+    if mayavi_widget_list[window.viewIndex-1].getCurrentFrame() >= (mayavi_widget_list[window.viewIndex-1].iterations-1):
+        mayavi_widget_list[window.viewIndex-1].setCurrentFrame(0)
 
 '''A view embedded in the window to contain an instance of the model'''
 class MayaviQWidget(QtGui.QWidget):
@@ -336,6 +331,7 @@ class MayaviQWidget(QtGui.QWidget):
         layout.addWidget(self.ui)
         self.ui.setParent(self)
         self.home()
+        self.iterations = 0
     
     def home(self):
         self.animator = None
@@ -348,7 +344,6 @@ class MayaviQWidget(QtGui.QWidget):
         self.colorBarDummySurf = mlab.pipeline.surface(self.colorbar_ug, opacity =0.8, colormap='hot')
         self.colorBar = mlab.colorbar(object=self.colorBarDummySurf, title='Concentration', orientation='vertical')
         self.colorBar.visible = False
-        self.iterations = 0
         self.surf = None
         self.population = 0
 
@@ -485,9 +480,7 @@ class Window(QtGui.QMainWindow):
     
     #Adds new molecule visualization view 
     def add_view(self): 
-        print("add here1")
-        mayavi_widget_list.append(MayaviQWidget(container))
-        print("add here2", mayavi_widget_list)             
+        mayavi_widget_list.append(MayaviQWidget(container))             
         if self.viewTally % 2 != 0: 
             self.columnIndex=0
             layout.addWidget(populate_comboBox(), self.rowIndex, self.columnIndex)
@@ -516,14 +509,14 @@ class Window(QtGui.QMainWindow):
             self.animator = anim(simData, text)
     def slider_movement(self):
         position = self.progress_slider.value()
-        x = int((position/100)*self.iterations)
-        self.setCurrentFrame(x)
+        x = int((position/100)*mayavi_widget_list[self.viewIndex-1].iterations)
+        mayavi_widget_list[self.viewIndex-1].setCurrentFrame(x)
         self.progress_slider_label.setText(str(x/1000)+ "s")
     
     def resetAnimation(self, resetButtonNumber):
-        mayavi_widget_list[window.viewIndex-1].setCurrentFrame(0)
-        self.progress_slider.setValue(0)
-        self.progress_bar.setValue(0)
+        mayavi_widget_list[self.viewIndex-1].setCurrentFrame(0)
+        mayavi_widget_list[self.viewIndex-1].progress_slider.setValue(0)
+        mayavi_widget_list[self.viewIndex-1].progress_bar.setValue(0)
         
         
 
@@ -632,9 +625,8 @@ if __name__ == "__main__":
     
     mayavi_widget_list = []
     progress_bar = QtGui.QProgressBar()
-    progress_slider = QSlider(Qt.Horizontal)
-    progress_slider.valueChanged.connect(window.slider_movement)
-    #mayavi_widget_list.append(MayaviQWidget(container)) #Initiates first morphology
+    window.progress_slider = QSlider(Qt.Horizontal)
+    window.progress_slider.valueChanged.connect(window.slider_movement)
     
     
 
@@ -645,12 +637,12 @@ if __name__ == "__main__":
     mol_type_label_list.append(QtGui.QLabel())
     #layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
     #layout.addWidget(mol_type_label_list[0], 0,1)
-    #layout.addWidget(mayavi_widget_list[0], 4, 1) # Visualization of morphology
+    #layout.addWidget(mayavi_widget_list[window.viewIndex-1], 4, 1) # Visualization of morphology
     #layout.addWidget(reset_button_list[0], 5, 1)
     layout.addWidget(progress_label, 2,0)
     layout.addWidget(progress_bar, 2, 0)
     layout.addWidget(progress_slider_label,3, 0)  
-    layout.addWidget(progress_slider, 3, 0) 
+    layout.addWidget(window.progress_slider, 3, 0) 
     #mayavi_widget_list.append(MayaviQWidget(container))  
     container.show()
     
