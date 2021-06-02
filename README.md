@@ -1,5 +1,5 @@
 # NeuroRDViz
-Python program to display morphology and particle concentrations.
+## Python program to display morphology and particle concentrations at the synapse 
 
 To run example, chdir to this folder and enter in terminal (tested in Fedora):
 
