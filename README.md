@@ -1,7 +1,7 @@
 # NeuroRDViz
-## Python program to display morphology and particle concentrations at post-synapse 
+### Post-Synaptic Morphology and Particle Concentration Visualizer
 
-To run example, chdir to this folder and enter in terminal (tested in Fedora):
+To run example, enter the following line in terminal, from within this folder (tested in Fedora)
 
     python NeuroRDViz.py PurkdifmodelCopy.h5
 
