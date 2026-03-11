@@ -929,6 +929,37 @@ class Window(QtGui.QMainWindow):
                 viewer.anim_timer = None
         print("Stopped all viewer animations")
 
+    def _render_frame(self, viewer, frame_idx):
+        """Update the 3D visualization for a viewer at the given frame."""
+        if getattr(viewer, 'population', None) is None:
+            return
+        if getattr(viewer, 'ug', None) is None or getattr(viewer, 'surf', None) is None:
+            return
+        frame_idx = max(0, min(frame_idx, viewer.iterations - 1))
+        concentrations = viewer.population[frame_idx, :]
+        scalars_pts = np.repeat(concentrations, 8)
+        scene = viewer.visualization.scene
+        try:
+            scene.disable_render = True
+        except Exception:
+            pass
+        viewer.ug.point_data.scalars = scalars_pts
+        viewer.ug.point_data.scalars.name = 'concentrations'
+        viewer.ug.modified()
+        try:
+            viewer.surf.module_manager.scalar_lut_manager.data_range = np.array(
+                [viewer.colorbar_min, viewer.colorbar_max])
+        except Exception:
+            pass
+        try:
+            scene.disable_render = False
+        except Exception:
+            pass
+        try:
+            scene.render()
+        except Exception:
+            pass
+
     def global_slider_movement(self):
         """When the global slider is dragged, move ALL viewers to that percentage."""
         if not mayavi_widget_list:
@@ -945,6 +976,7 @@ class Window(QtGui.QMainWindow):
             x = int((position / 100.0) * iterations)
             x = max(0, min(x, iterations - 1))
             viewer.setCurrentFrame(x)
+            self._render_frame(viewer, x)
             # Sync per-viewer progress widgets
             try:
                 pct = int((x / max(1, iterations)) * 100)
@@ -972,6 +1004,7 @@ class Window(QtGui.QMainWindow):
         x = int((position / 100.0) * iterations)
         x = max(0, min(x, iterations - 1))
         viewer.setCurrentFrame(x)
+        self._render_frame(viewer, x)
         try:
             sim_time = x * getattr(viewer, 'dt', 0.0)
             viewer.progress_label.setText(f"{sim_time:.4f}s")
