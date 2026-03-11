@@ -420,6 +420,7 @@ def anim_setup(simData, moleculeType, viewer_index):
             print("Warning: population voxel count != voxel_volumes count", viewer.population.shape, len(vv))
 
     viewer.iterations = int(out_location[moleculeType]['samples'])
+    viewer.dt = float(out_location[moleculeType]['dt'])
 
     if viewer.population is None or viewer.population.size == 0:
         return False
@@ -525,11 +526,13 @@ def anim_step(viewer_index):
 
     # Update per-viewer progress bar, slider, and time label
     try:
-        pct = int((v.getCurrentFrame() / max(1, v.iterations)) * 100)
+        cur = v.getCurrentFrame()
+        pct = int((cur / max(1, v.iterations)) * 100)
+        sim_time = cur * v.dt
         if v.progress_bar is not None:
             v.progress_bar.setValue(pct)
         if v.progress_label is not None:
-            v.progress_label.setText(f"{v.getCurrentFrame()/1000:.3f}s")
+            v.progress_label.setText(f"{sim_time:.4f}s")
         if v.progress_slider is not None:
             v.progress_slider.blockSignals(True)
             v.progress_slider.setValue(pct)
@@ -540,9 +543,11 @@ def anim_step(viewer_index):
     # Also update global progress for the currently selected viewer
     try:
         if viewer_index == window.viewIndex - 1:
-            pct = int((v.getCurrentFrame() / max(1, v.iterations)) * 100)
+            cur = v.getCurrentFrame()
+            pct = int((cur / max(1, v.iterations)) * 100)
+            sim_time = cur * v.dt
             window.global_progress_bar.setValue(pct)
-            window.global_progress_label.setText(f"{v.getCurrentFrame()/1000:.3f}s")
+            window.global_progress_label.setText(f"{sim_time:.4f}s")
             window.global_progress_slider.blockSignals(True)
             window.global_progress_slider.setValue(pct)
             window.global_progress_slider.blockSignals(False)
@@ -575,6 +580,7 @@ class MayaviQWidget(QtGui.QWidget):
         self.surf = None
         self.population = None
         self.iterations = 0
+        self.dt = 0.0
         self.progress_bar = None
         self.progress_slider = None
         self.progress_label = None
@@ -942,8 +948,9 @@ class Window(QtGui.QMainWindow):
             # Sync per-viewer progress widgets
             try:
                 pct = int((x / max(1, iterations)) * 100)
+                sim_time = x * getattr(viewer, 'dt', 0.0)
                 viewer.progress_bar.setValue(pct)
-                viewer.progress_label.setText(f"{x/1000:.3f}s")
+                viewer.progress_label.setText(f"{sim_time:.4f}s")
                 viewer.progress_slider.blockSignals(True)
                 viewer.progress_slider.setValue(pct)
                 viewer.progress_slider.blockSignals(False)
@@ -966,7 +973,8 @@ class Window(QtGui.QMainWindow):
         x = max(0, min(x, iterations - 1))
         viewer.setCurrentFrame(x)
         try:
-            viewer.progress_label.setText(f"{x/1000:.3f}s")
+            sim_time = x * getattr(viewer, 'dt', 0.0)
+            viewer.progress_label.setText(f"{sim_time:.4f}s")
             viewer.progress_bar.setValue(int((x / max(1, iterations)) * 100))
         except Exception:
             pass
