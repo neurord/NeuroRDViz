@@ -34,4 +34,13 @@ python NeuroRDViz.py Model_mglur_spine-CaN.h5
 - **Stable colorbar**: Concentration color range is locked to the global min/max across the full animation
 - **Simulation time display**: Progress labels show actual simulation timepoints from HDF5 metadata
 
-<img src="https://imgur.com/9c8RuL6.png">
+<table>
+<tr>
+<td><img src="https://imgur.com/9c8RuL6.png" width="400"></td>
+<td><img src="multi_viewer.png" width="400"></td>
+</tr>
+<tr>
+<td align="center"><em>Single viewer</em></td>
+<td align="center"><em>Multi-viewer with independent animations</em></td>
+</tr>
+</table>
