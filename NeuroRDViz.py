@@ -141,10 +141,11 @@ class Visualization(HasTraits):
     @on_trait_change('scene.activated')
     def update_plot(self):
         print('simData:', simData)
-        ug = create_morphology(simData)
-        surf = mlab.pipeline.surface(ug, opacity=1)
-        self.scene.mlab.pipeline.surface(mlab.pipeline.extract_edges(surf), color=(0, 0, 0)) # @UndefinedVariable - this comment tells Eclipse IDE to ignore "error"
-        mlab.axes(surf, nb_labels=7)
+        self.ug = create_morphology(simData)
+        s = self.scene.mlab  # scene-specific mlab — correct because scene IS active right now
+        self.surf = s.pipeline.surface(self.ug, opacity=1)
+        s.pipeline.surface(s.pipeline.extract_edges(self.surf), color=(0, 0, 0))
+        s.axes(self.surf, nb_labels=7)
 
     # the layout of the dialog created
     view = View(Item('scene', editor=SceneEditor(scene_class=MayaviScene),
@@ -372,18 +373,13 @@ class helpWindow(QWidget):
         self.close()
 
 '''
-This function runs the animation portion of the visualizer
-
-The "@mlab.animate" code above it indicates that anim
-is a decorator function of the original mayavi function named animate
-Decorators essentially work as wrappers, modifying the behavior of the code
-before and after the target function, augmenting the original functionality.
-In short, "anim" does what "animate" does, but with its own specifications.
-
-(delay=x) sets the speed where x is # of miliseconds between each frame.
+This function sets up the animation for a specific viewer.
+It loads molecule data, configures the EXISTING surface (created in
+Visualization.update_plot, guaranteed to be in the correct scene),
+and prepares the viewer for frame-by-frame animation via QTimer.
+Returns True if setup succeeded, False otherwise.
 '''
-@mlab.animate(delay=10)
-def anim(simData, moleculeType, viewer_index):
+def anim_setup(simData, moleculeType, viewer_index):
     # --- Normalize molecule name so GUI strings match HDF5 keys ---
     if isinstance(moleculeType, (bytes, bytearray)):
         moleculeType = moleculeType.decode("utf-8")
@@ -391,8 +387,15 @@ def anim(simData, moleculeType, viewer_index):
         moleculeType = str(moleculeType)
 
     if viewer_index < 0 or viewer_index >= len(mayavi_widget_list):
-        return
+        return False
     viewer = mayavi_widget_list[viewer_index]
+
+    # Ensure the scene has been activated and update_plot has run
+    viz = viewer.visualization
+    if not hasattr(viz, 'surf') or viz.surf is None:
+        print(f"Viewer {viewer_index}: scene not yet activated, cannot start animation")
+        return False
+
     # --- Gather molecule metadata and output locations for the entire model ---
 
     molecule_list = getMoleculeList(simData)
@@ -406,7 +409,7 @@ def anim(simData, moleculeType, viewer_index):
                 moleculeType = key
                 break
     if moleculeType not in out_location:
-        return
+        return False
     # --- Load voxel-wise concentration data and animation length ---
 
     viewer.population = get_voxel_molecule_conc(simData, moleculeType, out_location)
@@ -417,132 +420,134 @@ def anim(simData, moleculeType, viewer_index):
             print("Warning: population voxel count != voxel_volumes count", viewer.population.shape, len(vv))
 
     viewer.iterations = int(out_location[moleculeType]['samples'])
-    dt = float(out_location[moleculeType]['dt'])
-    # --- Build the 3D morphology mesh (unstructured grid) ---
-
-    viewer.ug = create_morphology(simData)
-    # --- Extract voxel volumes for population->concentration conversion (robust fallback) ---
-
-    try:
-        grid_obj = simData['model']['grid']
-        try:
-            arr = np.array(grid_obj)
-            if getattr(arr.dtype, "names", None) and 'volume' in arr.dtype.names:
-                voxel_volumes = arr['volume'].astype(float)
-            else:
-                voxel_volumes = np.array(simData['model']['grid']['volume'])
-        except Exception:
-            voxel_volumes = np.array(simData['model']['grid']['volume'])
-    except Exception:
-        voxel_volumes = np.ones(grid_pts_len)
 
     if viewer.population is None or viewer.population.size == 0:
-        return
+        return False
     # --- Compute global min/max across the ENTIRE animation for the colorbar ---
 
     global_min = float(np.min(viewer.population))
     global_max = float(np.max(viewer.population))
     viewer.colorbar_min, viewer.colorbar_max = global_min, global_max
 
-    # --- Initialize visualization with first animation frame ---
+    # --- Use the EXISTING surface from update_plot (already in the correct scene) ---
+    # This is the key fix: we never create new pipeline objects here, so we
+    # bypass mlab's global-figure routing entirely.
+
+    surf = viz.surf
+    ug = viz.ug
+    viewer.surf = surf  # alias for anim_step convenience
+    viewer.ug = ug
+
+    # --- Set initial concentration scalars on the existing UG ---
 
     first_frame = viewer.population[0, :]
-    viewer.ug.point_data.scalars = np.repeat(first_frame, 8)
-    viewer.ug.point_data.scalars.name = 'concentrations'
-    viewer.ug.modified()
-    # --- Create surface and bind color mapping to global data range ---
+    init_scalars = np.repeat(first_frame, 8)
+    ug.point_data.scalars = init_scalars
+    ug.point_data.scalars.name = 'concentrations'
+    ug.modified()
 
-    viewer.surf = mlab.pipeline.surface(viewer.ug, opacity=1, colormap='hot')
+    # --- Configure the existing surface for concentration display ---
 
-    # Lock the LUT to the global min/max so the colorbar is stable across all frames
-    viewer.surf.module_manager.scalar_lut_manager.use_default_range = False
-    viewer.surf.module_manager.scalar_lut_manager.data_range = [global_min, global_max]
+    lut_mgr = surf.module_manager.scalar_lut_manager
+    lut_mgr.lut_mode = 'hot'
+    lut_mgr.use_default_range = False
+    lut_mgr.data_range = np.array([global_min, global_max])
 
-    # Attach the initial scalars explicitly to the surface's mlab_source so Mayavi updates the colors
+    # Show the scalar bar (colorbar) on the existing surface's LUT manager
     try:
-        init_scalars = np.repeat(first_frame, 8)
-        viewer.surf.mlab_source.set(scalars=init_scalars)
-        viewer.surf.mlab_source.dataset.point_data.scalars.name = 'concentrations'
-        viewer.surf.mlab_source.update()
-    except Exception:
-        viewer.ug.point_data.scalars = np.repeat(first_frame, 8)
-        viewer.ug.point_data.scalars.name = 'concentrations'
-        viewer.ug.modified()
-
-    # Re-lock the range after setting scalars (mlab_source.set can auto-adjust it)
-    viewer.surf.module_manager.scalar_lut_manager.data_range = [global_min, global_max]
-
-    # --- Attach a colorbar directly to the surface ---
-
-    try:
-        if getattr(viewer, "colorBar", None) is not None:
-            try:
-                viewer.colorBar.visible = False
-            except Exception:
-                pass
-        viewer.colorBar = mlab.colorbar(object=viewer.surf, title='Concentration', orientation='vertical')
-        viewer.colorBar.visible = True
+        lut_mgr.show_scalar_bar = True
+        lut_mgr.scalar_bar.title = 'Concentration'
+        viewer.colorBar = lut_mgr
     except Exception:
         viewer.colorBar = None
 
-    if viewer.getCurrentFrame() is None:
-        viewer.setCurrentFrame(0)
-    # --- Main animation loop: update scalars, advance frame, update UI ---
+    # Force the scene to pick up the new scalars and render
+    try:
+        viz.scene.render()
+    except Exception:
+        pass
 
-    while viewer.getCurrentFrame() < viewer.iterations:
-        if viewer_index >= len(mayavi_widget_list):
-            break
-        v = mayavi_widget_list[viewer_index]
+    viewer.setCurrentFrame(0)
+    return True
 
-        frame_idx = v.getCurrentFrame()
-        frame_idx = max(0, min(frame_idx, v.iterations - 1))
 
-        concentrations = v.population[frame_idx, :]
-        scalars_pts = np.repeat(concentrations, 8)
+def anim_step(viewer_index):
+    """Advance one animation frame for the given viewer. Called by QTimer."""
+    if viewer_index < 0 or viewer_index >= len(mayavi_widget_list):
+        return
+    v = mayavi_widget_list[viewer_index]
 
-        # Preferred: update the surface's mlab_source so the display updates
-        try:
-            v.surf.mlab_source.set(scalars=scalars_pts)
-            try:
-                v.surf.mlab_source.dataset.point_data.scalars.name = 'concentrations'
-                v.surf.mlab_source.update()
-            except Exception:
-                pass
-        except Exception:
-            v.ug.point_data.scalars = scalars_pts
-            v.ug.point_data.scalars.name = 'concentrations'
-            v.ug.modified()
+    if v.getCurrentFrame() >= v.iterations:
+        # Animation complete — stop timer and reset
+        if getattr(v, "anim_timer", None) is not None:
+            v.anim_timer.stop()
+        v.setCurrentFrame(0)
+        return
 
-        # Re-lock the colorbar to global range after every frame update
-        try:
-            v.surf.module_manager.scalar_lut_manager.data_range = [v.colorbar_min, v.colorbar_max]
-        except Exception:
-            pass
+    frame_idx = v.getCurrentFrame()
+    frame_idx = max(0, min(frame_idx, v.iterations - 1))
 
-        v.setCurrentFrame(frame_idx + 1)
+    concentrations = v.population[frame_idx, :]
+    scalars_pts = np.repeat(concentrations, 8)
 
-        # Update the time label for whichever viewer is currently selected
+    # Update the EXISTING UG's scalars directly — this UG is bound to a surface
+    # that lives in this viewer's scene (created during update_plot), so the
+    # VTK pipeline update will render in the CORRECT scene.
+    scene = v.visualization.scene
+    try:
+        scene.disable_render = True
+    except Exception:
+        pass
+
+    v.ug.point_data.scalars = scalars_pts
+    v.ug.point_data.scalars.name = 'concentrations'
+    v.ug.modified()
+
+    # Re-lock the colorbar to global range
+    try:
+        v.surf.module_manager.scalar_lut_manager.data_range = np.array(
+            [v.colorbar_min, v.colorbar_max])
+    except Exception:
+        pass
+
+    try:
+        scene.disable_render = False
+    except Exception:
+        pass
+
+    # Force THIS viewer's scene to re-render
+    try:
+        scene.render()
+    except Exception:
+        pass
+
+    v.setCurrentFrame(frame_idx + 1)
+
+    # Update per-viewer progress bar, slider, and time label
+    try:
+        pct = int((v.getCurrentFrame() / max(1, v.iterations)) * 100)
+        if v.progress_bar is not None:
+            v.progress_bar.setValue(pct)
+        if v.progress_label is not None:
+            v.progress_label.setText(f"{v.getCurrentFrame()/1000:.3f}s")
+        if v.progress_slider is not None:
+            v.progress_slider.blockSignals(True)
+            v.progress_slider.setValue(pct)
+            v.progress_slider.blockSignals(False)
+    except Exception:
+        pass
+
+    # Also update global progress for the currently selected viewer
+    try:
         if viewer_index == window.viewIndex - 1:
-            window.progress_label.setText(f"{v.getCurrentFrame()/1000:.3f}s")
-
-            try:
-                pct = int((v.getCurrentFrame() / max(1, v.iterations)) * 100)
-                progress_bar.setValue(pct)
-
-                try:
-                    window.progress_slider.blockSignals(True)
-                    window.progress_slider.setValue(pct)
-                    window.progress_slider.blockSignals(False)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-        yield
-    # --- Reset animation to beginning after completion ---
-
-    if viewer.getCurrentFrame() >= (viewer.iterations - 1):
-        viewer.setCurrentFrame(0)
+            pct = int((v.getCurrentFrame() / max(1, v.iterations)) * 100)
+            window.global_progress_bar.setValue(pct)
+            window.global_progress_label.setText(f"{v.getCurrentFrame()/1000:.3f}s")
+            window.global_progress_slider.blockSignals(True)
+            window.global_progress_slider.setValue(pct)
+            window.global_progress_slider.blockSignals(False)
+    except Exception:
+        pass
 
 
 '''A view embedded in the window to contain an instance of the model'''
@@ -562,7 +567,7 @@ class MayaviQWidget(QtGui.QWidget):
         self.iterations = 0
 
     def home(self):
-        self.animator = None
+        self.anim_timer = None
         self.currentFrame = 0
         self.ug = None
         self.colorbar_min, self.colorbar_max = 0, 0
@@ -570,6 +575,9 @@ class MayaviQWidget(QtGui.QWidget):
         self.surf = None
         self.population = None
         self.iterations = 0
+        self.progress_bar = None
+        self.progress_slider = None
+        self.progress_label = None
 
 
     def setCurrentFrame(self, frame):
@@ -627,6 +635,18 @@ class Window(QtGui.QMainWindow):
         selectModelAction.setStatusTip('Select another view to simulate.')
         selectModelAction.triggered.connect(self.select_view)
 
+        #Main Menu details for "Start All Animations" button
+        startAllAction = QtGui.QAction("&Start All Animations -", self)
+        startAllAction.setShortcut("Ctrl+G")
+        startAllAction.setStatusTip('Start animations for all viewers simultaneously')
+        startAllAction.triggered.connect(self.start_all_animations)
+
+        #Main Menu details for "Stop All Animations" button
+        stopAllAction = QtGui.QAction("S&top All Animations -", self)
+        stopAllAction.setShortcut("Ctrl+T")
+        stopAllAction.setStatusTip('Stop all running animations')
+        stopAllAction.triggered.connect(self.stop_all_animations)
+
         #Main Menu details for "Help" button
         helpAction = QtGui.QAction("&Help -", self)
         helpAction.setShortcut("Ctrl+H")
@@ -638,6 +658,8 @@ class Window(QtGui.QMainWindow):
         #Adds Main Menu Toolbar "File" & assigns items, created above, to its dropdown.
         fileMenu = mainMenu.addMenu('&File')
         fileMenu.addAction(addAction)
+        fileMenu.addAction(startAllAction)
+        fileMenu.addAction(stopAllAction)
         fileMenu.addAction(exitAction)
 
         #Adds Main Menu Toolbar "Edit" & assigns items, created above, to its dropdown.
@@ -680,10 +702,19 @@ class Window(QtGui.QMainWindow):
         toolBarHelp.setStatusTip("Learn More About How to Use the Visualizer")
         toolBarHelp.triggered.connect(self.help_action)
 
+        toolBarStartAll = QtGui.QAction(QtGui.QIcon('startAllIcon.png'), "Start All Animations", self)
+        toolBarStartAll.setStatusTip('Start animations for all viewers simultaneously (in unison)')
+        toolBarStartAll.triggered.connect(self.start_all_animations)
+        toolBarStopAll = QtGui.QAction(QtGui.QIcon('stopAllIcon.png'), "Stop All Animations", self)
+        toolBarStopAll.setStatusTip('Stop all running animations')
+        toolBarStopAll.triggered.connect(self.stop_all_animations)
+
         self.toolBar = self.addToolBar("ToolBar")
         self.toolBar.addAction(toolBarColorBarMinMax)
         self.toolBar.addAction(toolBarAddView)
         self.toolBar.addAction(toolBarSelectView)
+        self.toolBar.addAction(toolBarStartAll)
+        self.toolBar.addAction(toolBarStopAll)
         self.toolBar.addAction(toolBarHelp)
 
         self.show()
@@ -714,16 +745,65 @@ class Window(QtGui.QMainWindow):
     def add_view(self):
         viewer_index = self.viewTally - 1  # 0-based index for the new viewer
         mayavi_widget_list.append(MayaviQWidget(container))
+
+        # Create combobox and store reference on the viewer
+        comboBox = populate_comboBox(viewer_index)
+        viewer = mayavi_widget_list[viewer_index]
+        viewer.comboBox = comboBox
+
+        # Create per-viewer Start and Stop buttons
+        idx = viewer_index
+        start_btn = QPushButton(f"Start Viewer {viewer_index + 1}")
+        start_btn.clicked.connect(lambda checked, vi=idx: self.start_viewer_animation(vi))
+        viewer.start_button = start_btn
+
+        stop_btn = QPushButton(f"Stop Viewer {viewer_index + 1}")
+        stop_btn.clicked.connect(lambda checked, vi=idx: self.stop_viewer_animation(vi))
+        viewer.stop_button = stop_btn
+
+        # Per-viewer progress bar, slider, and time label
+        viewer.progress_label = QLabel("0.000s")
+        viewer.progress_bar = QProgressBar()
+        viewer.progress_bar.setValue(0)
+        viewer.progress_slider = QSlider(Qt.Horizontal)
+        viewer.progress_slider.setRange(0, 100)
+        viewer.progress_slider.setValue(0)
+        viewer.progress_slider.valueChanged.connect(
+            lambda val, vi=idx: self.viewer_slider_movement(vi)
+        )
+
+        # Horizontal control bar: [combobox] [Start] [Stop]
+        ctrl_widget = QWidget()
+        ctrl_layout = QtWidgets.QHBoxLayout(ctrl_widget)
+        ctrl_layout.setContentsMargins(0, 0, 0, 0)
+        ctrl_layout.addWidget(comboBox, stretch=1)
+        ctrl_layout.addWidget(start_btn)
+        ctrl_layout.addWidget(stop_btn)
+
+        # Per-viewer progress widget: [progress_bar | time_label] / [slider]
+        progress_widget = QWidget()
+        progress_vlayout = QtWidgets.QVBoxLayout(progress_widget)
+        progress_vlayout.setContentsMargins(0, 0, 0, 0)
+        progress_vlayout.setSpacing(2)
+        prog_top = QWidget()
+        prog_top_layout = QtWidgets.QHBoxLayout(prog_top)
+        prog_top_layout.setContentsMargins(0, 0, 0, 0)
+        prog_top_layout.addWidget(viewer.progress_bar, stretch=1)
+        prog_top_layout.addWidget(viewer.progress_label)
+        progress_vlayout.addWidget(prog_top)
+        progress_vlayout.addWidget(viewer.progress_slider)
+
         if self.viewTally % 2 != 0:
             self.columnIndex=0
-            layout.addWidget(populate_comboBox(viewer_index), self.rowIndex, self.columnIndex)
-            layout.addWidget(mayavi_widget_list[viewer_index], self.rowIndex+1, self.columnIndex)
         else:
             self.columnIndex=1
-            layout.addWidget(populate_comboBox(viewer_index), self.rowIndex, self.columnIndex)
-            layout.addWidget(mayavi_widget_list[viewer_index], self.rowIndex+1, self.columnIndex)
-            self.rowIndex += 2
 
+        layout.addWidget(ctrl_widget, self.rowIndex, self.columnIndex)
+        layout.addWidget(mayavi_widget_list[viewer_index], self.rowIndex+1, self.columnIndex)
+        layout.addWidget(progress_widget, self.rowIndex+2, self.columnIndex)
+
+        if self.viewTally % 2 == 0:
+            self.rowIndex += 3
 
         self.viewTally += 1
         self.viewIndex += 1
@@ -743,46 +823,153 @@ class Window(QtGui.QMainWindow):
 
         viewer = mayavi_widget_list[viewer_index]
 
-        # close previous animator for THIS viewer (if any)
-        if getattr(viewer, "animator", None) is not None:
+        # stop previous animation timer for THIS viewer (if any)
+        if getattr(viewer, "anim_timer", None) is not None:
             try:
-                viewer.animator.close()
+                viewer.anim_timer.stop()
             except Exception:
                 pass
+            viewer.anim_timer = None
 
-        # start a fresh animator bound to this viewer
-        viewer.animator = anim(simData, text, viewer_index)
+        # set up the animation data and surface in the correct scene
+        if not anim_setup(simData, text, viewer_index):
+            return
+
+        # create a QTimer that drives this viewer's animation independently
+        timer = QtCore.QTimer()
+        timer.setInterval(10)  # 10ms between frames, same as old @mlab.animate(delay=10)
+        timer.timeout.connect(lambda vi=viewer_index: anim_step(vi))
+        viewer.anim_timer = timer
+        timer.start()
 
         # also set this viewer as the selected one for slider/progress bar
         self.viewIndex = viewer_index + 1
 
         print(f"Started animation for '{text}' in viewer {viewer_index + 1}")
 
-    def slider_movement(self):
+    def start_viewer_animation(self, viewer_index):
+        """Start animation for a specific viewer using its combobox selection."""
+        if viewer_index < 0 or viewer_index >= len(mayavi_widget_list):
+            return
+        viewer = mayavi_widget_list[viewer_index]
+        comboBox = getattr(viewer, 'comboBox', None)
+        if comboBox is None:
+            return
+        molecule = comboBox.currentText()
+        if not molecule:
+            return
+        self.molecule_selected_for_viewer(molecule, viewer_index)
+
+    def start_all_animations(self):
+        """Start animations for all viewers simultaneously (in unison)."""
+        # Phase 1: stop all existing timers and reset frames
+        for vi in range(len(mayavi_widget_list)):
+            viewer = mayavi_widget_list[vi]
+            if getattr(viewer, "anim_timer", None) is not None:
+                try:
+                    viewer.anim_timer.stop()
+                except Exception:
+                    pass
+                viewer.anim_timer = None
+            viewer.setCurrentFrame(0)
+
+        # Phase 2: set up all animations, then start all timers together
+        timers_to_start = []
+        for vi in range(len(mayavi_widget_list)):
+            viewer = mayavi_widget_list[vi]
+            comboBox = getattr(viewer, 'comboBox', None)
+            if comboBox is None:
+                continue
+            molecule = comboBox.currentText()
+            if not molecule:
+                continue
+            if not anim_setup(simData, molecule, vi):
+                continue
+            timer = QtCore.QTimer()
+            timer.setInterval(10)
+            timer.timeout.connect(lambda v=vi: anim_step(v))
+            viewer.anim_timer = timer
+            timers_to_start.append(timer)
+
+        for timer in timers_to_start:
+            timer.start()
+
+        if mayavi_widget_list:
+            self.viewIndex = 1
+        print("Started all viewer animations simultaneously")
+
+    def stop_viewer_animation(self, viewer_index):
+        """Stop animation for a specific viewer."""
+        if viewer_index < 0 or viewer_index >= len(mayavi_widget_list):
+            return
+        viewer = mayavi_widget_list[viewer_index]
+        if getattr(viewer, "anim_timer", None) is not None:
+            try:
+                viewer.anim_timer.stop()
+            except Exception:
+                pass
+            viewer.anim_timer = None
+        print(f"Stopped animation in viewer {viewer_index + 1}")
+
+    def stop_all_animations(self):
+        """Stop animations for all viewers."""
+        for vi in range(len(mayavi_widget_list)):
+            viewer = mayavi_widget_list[vi]
+            if getattr(viewer, "anim_timer", None) is not None:
+                try:
+                    viewer.anim_timer.stop()
+                except Exception:
+                    pass
+                viewer.anim_timer = None
+        print("Stopped all viewer animations")
+
+    def global_slider_movement(self):
+        """When the global slider is dragged, move ALL viewers to that percentage."""
         if not mayavi_widget_list:
             return
+        position = self.global_progress_slider.value()
+        for vi in range(len(mayavi_widget_list)):
+            viewer = mayavi_widget_list[vi]
+            try:
+                iterations = int(getattr(viewer, "iterations", 0))
+            except Exception:
+                continue
+            if iterations <= 0:
+                continue
+            x = int((position / 100.0) * iterations)
+            x = max(0, min(x, iterations - 1))
+            viewer.setCurrentFrame(x)
+            # Sync per-viewer progress widgets
+            try:
+                pct = int((x / max(1, iterations)) * 100)
+                viewer.progress_bar.setValue(pct)
+                viewer.progress_label.setText(f"{x/1000:.3f}s")
+                viewer.progress_slider.blockSignals(True)
+                viewer.progress_slider.setValue(pct)
+                viewer.progress_slider.blockSignals(False)
+            except Exception:
+                pass
 
-        # ensure viewIndex maps to a valid list index
-        idx = max(0, min(self.viewIndex - 1, len(mayavi_widget_list) - 1))
-        viewer = mayavi_widget_list[idx]
-
+    def viewer_slider_movement(self, viewer_index):
+        """When a per-viewer slider is dragged, move only that viewer."""
+        if viewer_index < 0 or viewer_index >= len(mayavi_widget_list):
+            return
+        viewer = mayavi_widget_list[viewer_index]
         try:
             iterations = int(getattr(viewer, "iterations", 0))
         except Exception:
             return
         if iterations <= 0:
             return
-
-        position = self.progress_slider.value()
+        position = viewer.progress_slider.value()
         x = int((position / 100.0) * iterations)
         x = max(0, min(x, iterations - 1))
-
         viewer.setCurrentFrame(x)
-
         try:
-            self.progress_slider_label.setText(f"{x/1000:.3f}s")
+            viewer.progress_label.setText(f"{x/1000:.3f}s")
+            viewer.progress_bar.setValue(int((x / max(1, iterations)) * 100))
         except Exception:
-            self.progress_slider_label.setText(str(x/1000) + "s")
+            pass
 
 
 
@@ -797,16 +984,26 @@ class Window(QtGui.QMainWindow):
         except Exception:
             viewer.currentFrame = 0
 
-        # update the global UI controls (single slider + progressbar)
+        # reset per-viewer progress widgets
         try:
-            window.progress_slider.blockSignals(True)
-            window.progress_slider.setValue(0)
-            window.progress_slider.blockSignals(False)
+            if viewer.progress_bar is not None:
+                viewer.progress_bar.setValue(0)
+            if viewer.progress_label is not None:
+                viewer.progress_label.setText("0.000s")
+            if viewer.progress_slider is not None:
+                viewer.progress_slider.blockSignals(True)
+                viewer.progress_slider.setValue(0)
+                viewer.progress_slider.blockSignals(False)
         except Exception:
             pass
 
+        # update global progress controls
         try:
-            progress_bar.setValue(0)
+            window.global_progress_slider.blockSignals(True)
+            window.global_progress_slider.setValue(0)
+            window.global_progress_slider.blockSignals(False)
+            window.global_progress_bar.setValue(0)
+            window.global_progress_label.setText("0.000s")
         except Exception:
             pass
 
@@ -989,10 +1186,6 @@ def populate_comboBox(viewer_index):
     comboBox.setModel(comboBoxItemModel)
     comboBox.setModelColumn(0)
 
-    # Bind this combobox to its specific viewer using a lambda with captured index
-    idx = viewer_index  # capture for closure
-    comboBox.textActivated.connect(lambda text, vi=idx: window.molecule_selected_for_viewer(text, vi))
-
     return comboBox
 
 
@@ -1011,11 +1204,22 @@ if __name__ == "__main__":
     #Creating instances of mayavi UI
 
     app = QApplication.instance() or QApplication(sys.argv)
-    container = QtGui.QWidget()
-    layout = QtGui.QGridLayout(container)
 
-    progress_label = QtGui.QLabel(container)
-    progress_slider_label = QtGui.QLabel(container)
+    # Main container: VBoxLayout with viewer grid on top, global controls on bottom
+    container = QtGui.QWidget()
+    main_layout = QtWidgets.QVBoxLayout(container)
+    main_layout.setContentsMargins(4, 4, 4, 4)
+    main_layout.setSpacing(6)
+
+    # Viewer grid (comboboxes, mayavi widgets, per-viewer progress)
+    viewer_grid_widget = QtGui.QWidget()
+    layout = QtGui.QGridLayout(viewer_grid_widget)
+    main_layout.addWidget(viewer_grid_widget, stretch=1)
+
+    # Dummy labels required by Window.__init__ (replaced by per-viewer labels)
+    progress_label = QtGui.QLabel()
+    progress_slider_label = QtGui.QLabel()
+
     window = Window()
 
     # create storage before adding views
@@ -1027,32 +1231,60 @@ if __name__ == "__main__":
     window.viewIndex = 0
     window.viewTally = 1
 
-    # Add the first viewer (combo + mayavi widget)
+    # Add the first viewer (combo + mayavi widget + per-viewer progress)
     window.add_view()
 
-    progress_bar = QtGui.QProgressBar()
-    window.progress_slider = QSlider(Qt.Horizontal)
-    window.progress_slider.valueChanged.connect(window.slider_movement)
+    # ── Global controls at bottom ────────────────────────────────────────
+    global_controls = QtGui.QWidget()
+    gc_layout = QtWidgets.QVBoxLayout(global_controls)
+    gc_layout.setContentsMargins(0, 0, 0, 0)
+    gc_layout.setSpacing(4)
 
+    # Start/Stop All buttons
+    btn_row = QWidget()
+    btn_row_layout = QtWidgets.QHBoxLayout(btn_row)
+    btn_row_layout.setContentsMargins(0, 0, 0, 0)
 
+    start_all_btn = QPushButton("Start All Animations")
+    start_all_btn.setStyleSheet("font-weight: bold; padding: 6px;")
+    start_all_btn.clicked.connect(window.start_all_animations)
 
-    #These lines place the respective widgets into the overall layout that allows you to place items in appropriate positions
-    #e.g. comboxBox will be added to the 1st row and 1st column with the line:
-    #layout.addWidget(comboBox, 0, 0)
-    mol_type_label_list = []
-    mol_type_label_list.append(QtGui.QLabel())
-    #layout.addWidget(comboBox, 0, 0)  # 0,0 = top left widget location, 0,1 = one to the right of it, etc.
-    #layout.addWidget(mol_type_label_list[0], 0,1)
-    #layout.addWidget(mayavi_widget_list[window.viewIndex-1], 4, 1) # Visualization of morphology
-    #layout.addWidget(reset_button_list[0], 5, 1)
-    layout.addWidget(progress_label, 2,0)
-    layout.addWidget(progress_bar, 2, 0)
-    layout.addWidget(progress_slider_label,3, 0)
-    layout.addWidget(window.progress_slider, 3, 0)
-    #mayavi_widget_list.append(MayaviQWidget(container))
+    stop_all_btn = QPushButton("Stop All Animations")
+    stop_all_btn.setStyleSheet("font-weight: bold; padding: 6px;")
+    stop_all_btn.clicked.connect(window.stop_all_animations)
+
+    btn_row_layout.addWidget(start_all_btn)
+    btn_row_layout.addWidget(stop_all_btn)
+    gc_layout.addWidget(btn_row)
+
+    # Global progress bar + label
+    window.global_progress_bar = QProgressBar()
+    window.global_progress_label = QLabel("0.000s")
+    prog_row = QWidget()
+    prog_row_layout = QtWidgets.QHBoxLayout(prog_row)
+    prog_row_layout.setContentsMargins(0, 0, 0, 0)
+    prog_row_layout.addWidget(window.global_progress_bar, stretch=1)
+    prog_row_layout.addWidget(window.global_progress_label)
+    gc_layout.addWidget(prog_row)
+
+    # Global scrub slider (moves ALL viewers)
+    slider_label = QLabel("Global Scrub (all viewers):")
+    gc_layout.addWidget(slider_label)
+    window.global_progress_slider = QSlider(Qt.Horizontal)
+    window.global_progress_slider.setRange(0, 100)
+    window.global_progress_slider.setValue(0)
+    window.global_progress_slider.valueChanged.connect(window.global_slider_movement)
+    gc_layout.addWidget(window.global_progress_slider)
+
+    # Add Viewer button at the very bottom
+    add_viewer_btn = QPushButton("+ Add Viewer")
+    add_viewer_btn.setStyleSheet("font-weight: bold; padding: 6px;")
+    add_viewer_btn.clicked.connect(window.add_view)
+    gc_layout.addWidget(add_viewer_btn)
+
+    main_layout.addWidget(global_controls)
 
     container.show()
-
     window.setCentralWidget(container)
     window.show()
     app.exec() # Start the main event loop.
