@@ -383,14 +383,16 @@ In short, "anim" does what "animate" does, but with its own specifications.
 (delay=x) sets the speed where x is # of miliseconds between each frame.
 '''
 @mlab.animate(delay=10)
-def anim(simData, moleculeType):
+def anim(simData, moleculeType, viewer_index):
     # --- Normalize molecule name so GUI strings match HDF5 keys ---
     if isinstance(moleculeType, (bytes, bytearray)):
         moleculeType = moleculeType.decode("utf-8")
     else:
         moleculeType = str(moleculeType)
 
-    viewer = mayavi_widget_list[window.viewIndex - 1]
+    if viewer_index < 0 or viewer_index >= len(mayavi_widget_list):
+        return
+    viewer = mayavi_widget_list[viewer_index]
     # --- Gather molecule metadata and output locations for the entire model ---
 
     molecule_list = getMoleculeList(simData)
@@ -436,33 +438,39 @@ def anim(simData, moleculeType):
 
     if viewer.population is None or viewer.population.size == 0:
         return
+    # --- Compute global min/max across the ENTIRE animation for the colorbar ---
+
+    global_min = float(np.min(viewer.population))
+    global_max = float(np.max(viewer.population))
+    viewer.colorbar_min, viewer.colorbar_max = global_min, global_max
+
     # --- Initialize visualization with first animation frame ---
 
     first_frame = viewer.population[0, :]
     viewer.ug.point_data.scalars = np.repeat(first_frame, 8)
     viewer.ug.point_data.scalars.name = 'concentrations'
     viewer.ug.modified()
-    # --- Create surface and bind color mapping to real scalar data ---
+    # --- Create surface and bind color mapping to global data range ---
 
     viewer.surf = mlab.pipeline.surface(viewer.ug, opacity=1, colormap='hot')
 
-    # ensure the surface uses a scalar array (per-point) from the start
-    max_pop = float(np.max(viewer.population))
-    viewer.surf.module_manager.scalar_lut_manager.data_range = [0.0, max_pop]
+    # Lock the LUT to the global min/max so the colorbar is stable across all frames
+    viewer.surf.module_manager.scalar_lut_manager.use_default_range = False
+    viewer.surf.module_manager.scalar_lut_manager.data_range = [global_min, global_max]
 
     # Attach the initial scalars explicitly to the surface's mlab_source so Mayavi updates the colors
     try:
         init_scalars = np.repeat(first_frame, 8)
-        # set scalars on the mlab source (this is what the visual pipeline listens to)
         viewer.surf.mlab_source.set(scalars=init_scalars)
-        # make sure dataset metadata matches
         viewer.surf.mlab_source.dataset.point_data.scalars.name = 'concentrations'
         viewer.surf.mlab_source.update()
     except Exception:
-        # fallback (older mayavi/tvtk versions)
         viewer.ug.point_data.scalars = np.repeat(first_frame, 8)
         viewer.ug.point_data.scalars.name = 'concentrations'
         viewer.ug.modified()
+
+    # Re-lock the range after setting scalars (mlab_source.set can auto-adjust it)
+    viewer.surf.module_manager.scalar_lut_manager.data_range = [global_min, global_max]
 
     # --- Attach a colorbar directly to the surface ---
 
@@ -474,7 +482,6 @@ def anim(simData, moleculeType):
                 pass
         viewer.colorBar = mlab.colorbar(object=viewer.surf, title='Concentration', orientation='vertical')
         viewer.colorBar.visible = True
-        viewer.colorbar_min, viewer.colorbar_max = 0.0, max_pop
     except Exception:
         viewer.colorBar = None
 
@@ -483,10 +490,9 @@ def anim(simData, moleculeType):
     # --- Main animation loop: update scalars, advance frame, update UI ---
 
     while viewer.getCurrentFrame() < viewer.iterations:
-        idx = window.viewIndex - 1
-        if idx < 0 or idx >= len(mayavi_widget_list):
+        if viewer_index >= len(mayavi_widget_list):
             break
-        v = mayavi_widget_list[idx]
+        v = mayavi_widget_list[viewer_index]
 
         frame_idx = v.getCurrentFrame()
         frame_idx = max(0, min(frame_idx, v.iterations - 1))
@@ -497,38 +503,40 @@ def anim(simData, moleculeType):
         # Preferred: update the surface's mlab_source so the display updates
         try:
             v.surf.mlab_source.set(scalars=scalars_pts)
-            # ensure name and dataset consistency
             try:
                 v.surf.mlab_source.dataset.point_data.scalars.name = 'concentrations'
                 v.surf.mlab_source.update()
             except Exception:
                 pass
         except Exception:
-            # fallback: update unstructured grid directly
             v.ug.point_data.scalars = scalars_pts
             v.ug.point_data.scalars.name = 'concentrations'
             v.ug.modified()
 
+        # Re-lock the colorbar to global range after every frame update
+        try:
+            v.surf.module_manager.scalar_lut_manager.data_range = [v.colorbar_min, v.colorbar_max]
+        except Exception:
+            pass
 
         v.setCurrentFrame(frame_idx + 1)
 
-        # Update the time label
-        window.progress_label.setText(f"{v.getCurrentFrame()/1000:.3f}s")
+        # Update the time label for whichever viewer is currently selected
+        if viewer_index == window.viewIndex - 1:
+            window.progress_label.setText(f"{v.getCurrentFrame()/1000:.3f}s")
 
-        # Update the progress bar and the single slider so they reflect current animation position.
-        try:
-            pct = int((v.getCurrentFrame() / max(1, v.iterations)) * 100)
-            progress_bar.setValue(pct)
-
-            # avoid re-triggering slider_movement while we update the slider programmatically
             try:
-                window.progress_slider.blockSignals(True)
-                window.progress_slider.setValue(pct)
-                window.progress_slider.blockSignals(False)
+                pct = int((v.getCurrentFrame() / max(1, v.iterations)) * 100)
+                progress_bar.setValue(pct)
+
+                try:
+                    window.progress_slider.blockSignals(True)
+                    window.progress_slider.setValue(pct)
+                    window.progress_slider.blockSignals(False)
+                except Exception:
+                    pass
             except Exception:
                 pass
-        except Exception:
-            pass
 
         yield
     # --- Reset animation to beginning after completion ---
@@ -593,8 +601,6 @@ class Window(QtGui.QMainWindow):
         super(Window, self).__init__()
         self.setGeometry(50, 50, 1100, 800)
         self.setWindowTitle("NeuoRD Visualizer" + " - " + fileName)
-
-        self.animator = None
 
         #Main Menu details for "Add a Viewer" button
         addAction = QtGui.QAction("&Add a Viewer -", self)
@@ -706,15 +712,16 @@ class Window(QtGui.QMainWindow):
 
     #Adds new molecule visualization view
     def add_view(self):
+        viewer_index = self.viewTally - 1  # 0-based index for the new viewer
         mayavi_widget_list.append(MayaviQWidget(container))
         if self.viewTally % 2 != 0:
             self.columnIndex=0
-            layout.addWidget(populate_comboBox(), self.rowIndex, self.columnIndex)
-            layout.addWidget(mayavi_widget_list[self.viewTally-1], self.rowIndex+1, self.columnIndex)
+            layout.addWidget(populate_comboBox(viewer_index), self.rowIndex, self.columnIndex)
+            layout.addWidget(mayavi_widget_list[viewer_index], self.rowIndex+1, self.columnIndex)
         else:
             self.columnIndex=1
-            layout.addWidget(populate_comboBox(), self.rowIndex, self.columnIndex)
-            layout.addWidget(mayavi_widget_list[self.viewTally-1], self.rowIndex+1, self.columnIndex)
+            layout.addWidget(populate_comboBox(viewer_index), self.rowIndex, self.columnIndex)
+            layout.addWidget(mayavi_widget_list[viewer_index], self.rowIndex+1, self.columnIndex)
             self.rowIndex += 2
 
 
@@ -727,24 +734,29 @@ class Window(QtGui.QMainWindow):
             self.viewIndex = int(text)
     #This is where the animation portion of the program is called.
 
-    def molecule_selected(self, text):
-        # text will be the string from the activated signal
+    def molecule_selected_for_viewer(self, text, viewer_index):
+        """Start animation for a specific viewer. Each viewer runs independently."""
         if not text:
             return
+        if viewer_index < 0 or viewer_index >= len(mayavi_widget_list):
+            return
 
-        # close previous animator (if any) to ensure it stops
-        if getattr(self, "animator", None) is not None:
+        viewer = mayavi_widget_list[viewer_index]
+
+        # close previous animator for THIS viewer (if any)
+        if getattr(viewer, "animator", None) is not None:
             try:
-                self.animator.close()
+                viewer.animator.close()
             except Exception:
                 pass
 
-        # create a fresh animator and keep a reference (prevents GC)
-        # calling anim(...) is sufficient for mlab.animate to schedule it
-        self.animator = anim(simData, text)
+        # start a fresh animator bound to this viewer
+        viewer.animator = anim(simData, text, viewer_index)
 
-        # small debug print (optional)
-        print(f"Started animation for '{text}'")
+        # also set this viewer as the selected one for slider/progress bar
+        self.viewIndex = viewer_index + 1
+
+        print(f"Started animation for '{text}' in viewer {viewer_index + 1}")
 
     def slider_movement(self):
         if not mayavi_widget_list:
@@ -960,7 +972,7 @@ def get_mol_info(simData, plot_molecules, grid_points):
 '''
 Fills the dropdown window with choices for molecules
 '''
-def populate_comboBox():
+def populate_comboBox(viewer_index):
     comboBoxItemModel = QStandardItemModel() #Required for searchable comboBox
     comboBox = ExtendedCombo()
     moleculeList = getMoleculeList(simData)  # HDF5 bytes
@@ -977,8 +989,9 @@ def populate_comboBox():
     comboBox.setModel(comboBoxItemModel)
     comboBox.setModelColumn(0)
 
-    # Connect a text signal that exists on PySide6 and emits a str
-    comboBox.textActivated.connect(window.molecule_selected)     # user selection only
+    # Bind this combobox to its specific viewer using a lambda with captured index
+    idx = viewer_index  # capture for closure
+    comboBox.textActivated.connect(lambda text, vi=idx: window.molecule_selected_for_viewer(text, vi))
 
     return comboBox
 
